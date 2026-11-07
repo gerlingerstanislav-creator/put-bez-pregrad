@@ -168,20 +168,53 @@ function format_ru_phone(mixed $value): ?string {
     return '+7 (' . substr($digits, 0, 3) . ') ' .
         substr($digits, 3, 3) . '-' . substr($digits, 6, 2) . '-' . substr($digits, 8, 2);
 }
+/** Load the IDN polyfill when the host has no intl extension. */
+function ensure_idn_support(): bool {
+    if (function_exists('idn_to_ascii') && function_exists('idn_to_utf8')) return true;
+    $autoload = __DIR__ . '/vendor/autoload.php';
+    if (!is_file($autoload)) return false;
+    require_once $autoload;
+    return function_exists('idn_to_ascii') && function_exists('idn_to_utf8');
+}
+
+/** Canonical SMTP address: ASCII local part and punycoded international domain. */
 function normalized_email(mixed $value): ?string {
     if (!is_string($value)) return null;
     $value = trim($value);
-    if (strlen($value) > 250 || str_contains($value, "\r") || str_contains($value, "\n")) return null;
+    if ($value === '' || strlen($value) > 320 ||
+        preg_match('/[\x00-\x20\x7F]/', $value)) return null;
     $at = strrpos($value, '@');
     if ($at === false) return null;
-    $value = substr($value, 0, $at + 1) . strtolower(substr($value, $at + 1));
-    return filter_var($value, FILTER_VALIDATE_EMAIL) ? $value : null;
+    $local = substr($value, 0, $at);
+    $domain = substr($value, $at + 1);
+    if ($local === '' || $domain === '' ||
+        !preg_match('/^[\x21-\x7E]+$/', $local)) return null;
+    if (preg_match('/[^\x00-\x7F]/', $domain)) {
+        if (!ensure_idn_support()) return null;
+        $ascii = idn_to_ascii($domain, IDNA_DEFAULT, INTL_IDNA_VARIANT_UTS46);
+        if (!is_string($ascii) || $ascii === '') return null;
+        $domain = $ascii;
+    }
+    $email = $local . '@' . strtolower($domain);
+    return filter_var($email, FILTER_VALIDATE_EMAIL) !== false ? $email : null;
+}
+
+function email_for_display(mixed $value): string {
+    $ascii = normalized_email($value);
+    if ($ascii === null) return is_string($value) ? $value : '';
+    $at = strrpos($ascii, '@');
+    $domain = substr($ascii, $at + 1);
+    if (!str_contains($domain, 'xn--') || !ensure_idn_support()) return $ascii;
+    $unicode = idn_to_utf8($domain, IDNA_DEFAULT, INTL_IDNA_VARIANT_UTS46);
+    return is_string($unicode) && $unicode !== ''
+        ? substr($ascii, 0, $at + 1) . $unicode
+        : $ascii;
 }
 function smtp_public_status(array $state): array {
     $smtp = $state['smtp'] ?? [];
     return [
         'host' => in_array($smtp['host'] ?? '', ['smtp.timeweb.ru', 'smtp.yandex.ru'], true) ? $smtp['host'] : 'smtp.timeweb.ru',
-        'user' => is_string($smtp['user'] ?? null) ? $smtp['user'] : '',
+        'user' => email_for_display($smtp['user'] ?? ''),
         'configured' => is_string($smtp['password'] ?? null) && $smtp['password'] !== '',
     ];
 }

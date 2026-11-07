@@ -67,7 +67,7 @@ if ($action === 'smtp') {
     }
     $state = current_state();
     $current = is_array($state['smtp'] ?? null) ? $state['smtp'] : [];
-    if ($pass === '' && ($user !== ($current['user'] ?? null) || $host !== ($current['host'] ?? null))) {
+    if ($pass === '' && ($user !== normalized_email($current['user'] ?? null) || $host !== ($current['host'] ?? null))) {
         response_json(['error' => 'При изменении SMTP-логина или сервиса укажите пароль'], 422);
     }
     $password = $pass !== '' ? $pass : ($current['password'] ?? '');
@@ -90,48 +90,21 @@ if ($action === 'test-email') {
             'Тест почты — Путь без преград',
             "Тестовое сообщение отправлено из панели администрирования сайта.\nЕсли письмо пришло, SMTP настроен корректно.");
     } catch (Throwable $e) {
-        // Diagnostic is visible only to an authenticated admin.
-        $kind = $e->getMessage();
-        if (str_starts_with($kind, 'SMTP_SEND_FAILED:')) {
-            response_json(['error' => 'SMTP отклонил письмо. Проверьте логин, пароль приложения и настройки сервиса. Код: SMTP_SEND_FAILED'], 502);
-        }
-        response_json(['error' => 'Не удалось отправить тестовое письмо: ' . substr($kind, 0, 80)], 502);
+        $code = $e->getMessage();
+        $errors = [
+            'SMTP_NOT_CONFIGURED' => 'Адрес SMTP-отправителя или пароль не настроены.',
+            'SMTP_DEPENDENCY_UNAVAILABLE' => 'Библиотека отправки не установлена на сервере.',
+            'SMTP_ADDRESS_INVALID' => 'Некорректный адрес отправителя или получателя.',
+            'SMTP_AUTH_FAILED' => 'SMTP-сервер отклонил авторизацию. Проверьте полный адрес ящика и его пароль.',
+            'SMTP_TLS_FAILED' => 'Не удалось установить защищённое SMTP-соединение (STARTTLS).',
+            'SMTP_CONNECTION_FAILED' => 'Сайт не смог подключиться к серверу smtp.timeweb.ru:587.',
+            'SMTP_ADDRESS_REJECTED' => 'SMTP-сервер отклонил адрес отправителя или получателя.',
+            'SMTP_SEND_FAILED' => 'Почтовый сервер вернул ошибку отправки. Нужна диагностика SMTP-ответа.',
+        ];
+        if (!isset($errors[$code])) $code = 'SMTP_SEND_FAILED';
+        response_json(['error' => $errors[$code], 'code' => $code], 502);
     }
     response_json(['ok' => true, 'message' => 'SMTP принял тестовое письмо. Проверьте папку входящих и спам']);
-}
-if ($action === 'test-native-mail') {
-    // The standard Timeweb Exim transport can be tested without SMTP credentials.
-    if (!throttle('admin-native-mail-test', 3, 900)) {
-        response_json(['error' => 'Не больше 3 проверок за 15 минут'], 429);
-    }
-    $state = current_state();
-    $recipient = normalized_email($state['settings']['request_email'] ?? null);
-    if (!$recipient) response_json(['error' => 'Сначала укажите почту получения заявок'], 422);
-
-    $testId = gmdate('Ymd-His') . '-' . bin2hex(random_bytes(3));
-    $subject = 'Timeweb PHP mail test ' . $testId;
-    $body = "This is a test of Timeweb local PHP mail transport (Exim).\n" .
-        "Site: Put Bez Pregrad\nTest ID: {$testId}\n";
-    // Minimal invocation, matching Timeweb's documented PHP mail() test.
-    $result = @mail($recipient, $subject, $body);
-    if (!$result) {
-        error_log('PBP native PHP mail test failed: ' . $testId);
-        response_json([
-            'error' => 'PHP mail() вернул FALSE. Локальный Exim не принял письмо. ' .
-                'Проверьте ограничения аккаунта Timeweb или отправьте обращение в поддержку. ' .
-                'Код теста: ' . $testId,
-            'test_id' => $testId,
-            'accepted' => false,
-        ], 502);
-    }
-    response_json([
-        'ok' => true,
-        'accepted' => true,
-        'test_id' => $testId,
-        'message' => 'PHP mail() вернул TRUE — Exim принял сообщение. ' .
-            'Проверьте входящие и спам на ' . $recipient .
-            '. Тема содержит код ' . $testId . '. Доставка адресату ещё не подтверждена.',
-    ]);
 }
 if ($action === 'password') {
     $current = $data['current_password'] ?? null;

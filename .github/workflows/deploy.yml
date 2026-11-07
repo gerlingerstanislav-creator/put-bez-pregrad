@@ -41,6 +41,10 @@ jobs:
           test -s dist/api/vendor/autoload.php
       - name: Check PHP syntax
         run: find dist/api -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Test international SMTP addresses without intl extension
+        run: |
+          php tests/php-email.php
+          php -n tests/php-email.php
       - name: Smoke test PHP endpoints
         shell: bash
         run: |
@@ -55,7 +59,7 @@ jobs:
           grep -q 'primary_phone' /tmp/pbp-settings.json
           curl -fsS http://127.0.0.1:8087/api/admin.php?action=session | grep -q 'csrf'
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/settings.php)" = 401
-          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' 'http://127.0.0.1:8087/api/admin.php?action=test-native-mail')" = 403
+
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8087/api/submit.php)" = 422
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"departure":"Москва","destination":"Ульяновск","contact":"+7 (999) 123-45-67","consent":true}' http://127.0.0.1:8087/api/submit.php)" = 503
       - name: Ensure private data is outside web root

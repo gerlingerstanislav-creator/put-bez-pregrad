@@ -109,14 +109,6 @@ async function testSmtp() {
   } catch(e) { showError(e); }
   finally { busy.value = false; }
 }
-async function testNativeMail() {
-  busy.value = true;
-  try {
-    const result = await request('/api/admin.php?action=test-native-mail', {});
-    showOk(result.message || 'Exim принял тестовое письмо. Проверьте почтовый ящик');
-  } catch (e) { showError(e); }
-  finally { busy.value = false; }
-}
 async function changePassword() {
   if (changing.next !== changing.confirmation) { showError(new Error('Новые пароли не совпадают')); return; }
   if (changing.next.length < 14) { showError(new Error('Новый пароль должен содержать не менее 14 символов')); return; }
@@ -186,14 +178,8 @@ async function logout() {
           </form>
         </section>
         <section class="panel">
-          <h2>Проверка штатной почты Timeweb</h2>
-          <p>Проверить PHP <code>mail()</code> через локальный Exim можно без дополнительного почтового ящика, пароля или SMTP. Тест уйдёт на адрес получения заявок.</p>
-          <button type="button" class="ghost" :disabled="busy" @click="testNativeMail">Проверить PHP mail() на Timeweb</button>
-          <p class="hint">TRUE означает, что Exim принял сообщение, но не гарантирует доставку. FALSE означает отказ на сервере хостинга. Тест доступен только администратору.</p>
-        </section>
-        <section class="panel">
           <h2>Отправка заявок по SMTP</h2>
-          <p>Почта для заявок указывается выше. Здесь настраивается ящик, <strong>от имени которого</strong> сайт отправляет письма. Почтовый ящик должен поддерживать SMTP. Пароль не показывается после сохранения.</p>
+          <p>Почта для заявок указывается выше. Здесь настраивается ящик, <strong>от имени которого</strong> сайт отправляет письма. Почтовый ящик должен поддерживать SMTP. Кириллические домены (например, .рф) поддерживаются и преобразуются в Punycode автоматически. Пароль не показывается после сохранения.</p>
           <p :class="smtp.configured ? 'notice' : 'warning'" role="status">
             {{ smtp.configured ? 'SMTP настроен. Проверьте доставку тестовым письмом.' : 'SMTP пока не настроен. Без него автоматическая отправка не работает.' }}
           </p>
@@ -204,7 +190,7 @@ async function logout() {
               <option value="smtp.yandex.ru">Яндекс — smtp.yandex.ru</option>
             </select>
             <label for="smtp-user">Почта отправителя (SMTP-логин)</label>
-            <input id="smtp-user" v-model.trim="smtp.user" type="email" inputmode="email" autocomplete="username" autocapitalize="off" :spellcheck="false" required maxlength="250" @blur="smtp.user = normalizeEmail(smtp.user)" placeholder="noreply@example.ru"/>
+            <input id="smtp-user" v-model.trim="smtp.user" type="text" inputmode="email" autocomplete="username" autocapitalize="off" :spellcheck="false" required maxlength="250" @blur="smtp.user = normalizeEmail(smtp.user)" placeholder="noreply@пример.рф"/>
             <label for="smtp-password">Пароль почтового ящика / пароль приложения</label>
             <input id="smtp-password" v-model="smtp.password" type="password" autocomplete="new-password" :required="!smtp.configured" :placeholder="smtp.configured ? 'Оставьте пустым, чтобы не менять' : 'Введите пароль SMTP'" maxlength="512"/>
             <p class="hint">Для Яндекса обычно нужен отдельный пароль приложения. Соединение с SMTP шифруется (STARTTLS, порт 587), но сама админка пока работает по HTTP.</p>

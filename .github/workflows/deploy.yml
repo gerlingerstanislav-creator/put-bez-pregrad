@@ -44,15 +44,14 @@ jobs:
             fi
           done
           echo "Required secrets configured."
-      - name: Publish over FTPS
+      - name: Publish over FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         with:
           server: ${{ secrets.TIMEWEB_FTP_HOST }}
           username: ${{ secrets.TIMEWEB_FTP_USER }}
           password: ${{ secrets.TIMEWEB_FTP_PASSWORD }}
-          protocol: ftps
+          protocol: ftp
           port: 21
-          security: strict
           local-dir: ./dist/
           server-dir: ${{ endsWith(secrets.TIMEWEB_FTP_DIR, '/') && secrets.TIMEWEB_FTP_DIR || format('{0}/', secrets.TIMEWEB_FTP_DIR) }}
           dangerous-clean-slate: false

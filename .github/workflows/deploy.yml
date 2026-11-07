@@ -39,7 +39,8 @@ jobs:
       - name: Smoke test PHP endpoints
         shell: bash
         run: |
-          php -S 127.0.0.1:8087 -t dist >/tmp/pbp-php-server.log 2>&1 &
+          cp -a dist "$RUNNER_TEMP/pbp-smoke"
+          php -S 127.0.0.1:8087 -t "$RUNNER_TEMP/pbp-smoke" >/tmp/pbp-php-server.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           for try in 1 2 3 4 5; do
@@ -50,6 +51,9 @@ jobs:
           curl -fsS http://127.0.0.1:8087/api/admin.php?action=session | grep -q 'csrf'
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/settings.php)" = 401
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8087/api/submit.php)" = 422
+      - name: Ensure release contains no runtime data
+        run: |
+          test -z "$(find dist/api/private -maxdepth 1 -type f ! -name '.htaccess' -print -quit)"
       - name: Verify Timeweb secrets
         env:
           FTP_HOST: ${{ secrets.TIMEWEB_FTP_HOST }}
@@ -77,3 +81,8 @@ jobs:
           server-dir: ${{ endsWith(secrets.TIMEWEB_FTP_DIR, '/') && secrets.TIMEWEB_FTP_DIR || format('{0}/', secrets.TIMEWEB_FTP_DIR) }}
           dangerous-clean-slate: false
           log-level: standard
+
+      - name: Check live public API
+        continue-on-error: true
+        run: |
+          curl --fail --silent --show-error --location --max-time 15 http://bpreg.tw1.ru/api/public.php | grep -q 'primary_phone'

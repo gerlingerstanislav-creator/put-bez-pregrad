@@ -109,6 +109,14 @@ async function testSmtp() {
   } catch(e) { showError(e); }
   finally { busy.value = false; }
 }
+async function testNativeMail() {
+  busy.value = true;
+  try {
+    const result = await request('/api/admin.php?action=test-native-mail', {});
+    showOk(result.message || 'Exim принял тестовое письмо. Проверьте почтовый ящик');
+  } catch (e) { showError(e); }
+  finally { busy.value = false; }
+}
 async function changePassword() {
   if (changing.next !== changing.confirmation) { showError(new Error('Новые пароли не совпадают')); return; }
   if (changing.next.length < 14) { showError(new Error('Новый пароль должен содержать не менее 14 символов')); return; }
@@ -176,6 +184,12 @@ async function logout() {
             <input id="max" v-model.trim="settings.max_url" type="url" autocomplete="off" required maxlength="600" placeholder="https://max.ru/..."/>
             <button :disabled="busy" type="submit">{{ busy ? 'Сохраняем…' : 'Сохранить контакты' }}</button>
           </form>
+        </section>
+        <section class="panel">
+          <h2>Проверка штатной почты Timeweb</h2>
+          <p>Проверить PHP <code>mail()</code> через локальный Exim можно без дополнительного почтового ящика, пароля или SMTP. Тест уйдёт на адрес получения заявок.</p>
+          <button type="button" class="ghost" :disabled="busy" @click="testNativeMail">Проверить PHP mail() на Timeweb</button>
+          <p class="hint">TRUE означает, что Exim принял сообщение, но не гарантирует доставку. FALSE означает отказ на сервере хостинга. Тест доступен только администратору.</p>
         </section>
         <section class="panel">
           <h2>Отправка заявок по SMTP</h2>

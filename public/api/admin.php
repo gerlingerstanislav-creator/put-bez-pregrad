@@ -99,6 +99,40 @@ if ($action === 'test-email') {
     }
     response_json(['ok' => true, 'message' => 'SMTP принял тестовое письмо. Проверьте папку входящих и спам']);
 }
+if ($action === 'test-native-mail') {
+    // The standard Timeweb Exim transport can be tested without SMTP credentials.
+    if (!throttle('admin-native-mail-test', 3, 900)) {
+        response_json(['error' => 'Не больше 3 проверок за 15 минут'], 429);
+    }
+    $state = current_state();
+    $recipient = normalized_email($state['settings']['request_email'] ?? null);
+    if (!$recipient) response_json(['error' => 'Сначала укажите почту получения заявок'], 422);
+
+    $testId = gmdate('Ymd-His') . '-' . bin2hex(random_bytes(3));
+    $subject = 'Timeweb PHP mail test ' . $testId;
+    $body = "This is a test of Timeweb local PHP mail transport (Exim).\n" .
+        "Site: Put Bez Pregrad\nTest ID: {$testId}\n";
+    // Minimal invocation, matching Timeweb's documented PHP mail() test.
+    $result = @mail($recipient, $subject, $body);
+    if (!$result) {
+        error_log('PBP native PHP mail test failed: ' . $testId);
+        response_json([
+            'error' => 'PHP mail() вернул FALSE. Локальный Exim не принял письмо. ' .
+                'Проверьте ограничения аккаунта Timeweb или отправьте обращение в поддержку. ' .
+                'Код теста: ' . $testId,
+            'test_id' => $testId,
+            'accepted' => false,
+        ], 502);
+    }
+    response_json([
+        'ok' => true,
+        'accepted' => true,
+        'test_id' => $testId,
+        'message' => 'PHP mail() вернул TRUE — Exim принял сообщение. ' .
+            'Проверьте входящие и спам на ' . $recipient .
+            '. Тема содержит код ' . $testId . '. Доставка адресату ещё не подтверждена.',
+    ]);
+}
 if ($action === 'password') {
     $current = $data['current_password'] ?? null;
     $next = $data['new_password'] ?? null;

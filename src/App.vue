@@ -1,17 +1,31 @@
 <script setup>
 import TransportIcon from './components/TransportIcon.vue';
 import MaxIcon from './components/MaxIcon.vue';
-import { ref } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 
-const primaryPhone = '8 (8422) 71-73-03';
-const primaryPhoneHref = 'tel:+78422717303';
-const secondaryPhone = '8 (967) 771-73-03';
-const secondaryPhoneHref = 'tel:+79677717303';
-const email = 'bezpregrad73@yandex.ru';
-const maxUrl = 'https://max.ru/u/f9LHodD0cOIMqlrwFHrhALk5VeAh-knTiBJCLnhZSFM3iMksBuOEXJ6JMec';
+const settings = ref({
+  primary_phone: '8 (8422) 71-73-03',
+  secondary_phone: '8 (967) 771-73-03',
+  contact_email: 'bezpregrad73@yandex.ru',
+  max_url: 'https://max.ru/u/f9LHodD0cOIMqlrwFHrhALk5VeAh-knTiBJCLnhZSFM3iMksBuOEXJ6JMec',
+});
+const primaryPhone = computed(() => settings.value.primary_phone);
+const secondaryPhone = computed(() => settings.value.secondary_phone);
+const email = computed(() => settings.value.contact_email);
+const maxUrl = computed(() => settings.value.max_url);
+function phoneHref(value) {
+  let digits = value.replace(/\D/g, '');
+  if (digits.length === 11 && digits[0] === '8') digits = '7' + digits.slice(1);
+  return 'tel:+' + digits;
+}
+const primaryPhoneHref = computed(() => phoneHref(primaryPhone.value));
+const secondaryPhoneHref = computed(() => phoneHref(secondaryPhone.value));
+const primaryPieces = computed(() => {
+  const match = primaryPhone.value.match(/^(8\s*\(\d+\))\s*(.*)$/);
+  return match ? [match[1], match[2]] : ['', primaryPhone.value];
+});
 const brandLogo = '/images/put-bez-pregrad/logo.svg';
 const brandLogoLight = '/images/put-bez-pregrad/logo-light.svg';
-const brandFavicon = '/images/put-bez-pregrad/favicon.svg';
 const photoVan = '/images/accessible-van.avif';
 const photoPassenger = '/images/accessible-passenger.avif';
 const photoBoarding = '/images/accessible-boarding.avif';
@@ -19,26 +33,59 @@ const departure = ref('');
 const destination = ref('');
 const passenger = ref('');
 const contact = ref('');
+const website = ref('');
+const consent = ref(false);
+const sending = ref(false);
+const requestMessage = ref('');
+const requestError = ref(false);
 const mobileMenuOpen = ref(false);
 const closeMenu = () => { mobileMenuOpen.value = false; };
 
-// Until server-side request delivery is configured, provide a real email action
-// rather than a form that silently discards the visitor's personal details.
-const sendRequestEmail = () => {
-  if (!departure.value.trim() || !destination.value.trim() || !contact.value.trim()) return;
+onMounted(async () => {
+  try {
+    const response = await fetch('/api/public.php', { cache: 'no-store' });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (data && data.settings) settings.value = { ...settings.value, ...data.settings };
+  } catch {
+    // Default contacts remain visible if API is temporarily unreachable.
+  }
+});
 
-  const subject = 'Заявка на перевозку — Путь без преград';
-  const details = [
-    'Здравствуйте! Прошу связаться со мной по поводу перевозки.',
-    '',
-    `Откуда: ${departure.value.trim()}`,
-    `Куда: ${destination.value.trim()}`,
-    `Имя: ${passenger.value.trim() || 'Не указано'}`,
-    `Телефон: ${contact.value.trim()}`,
-  ].join('\n');
-
-  window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(details)}`;
-};
+async function sendRequest() {
+  if (sending.value || !departure.value.trim() || !destination.value.trim() || !contact.value.trim() || !consent.value) return;
+  sending.value = true;
+  requestMessage.value = '';
+  requestError.value = false;
+  try {
+    const response = await fetch('/api/submit.php', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        departure: departure.value.trim(),
+        destination: destination.value.trim(),
+        passenger: passenger.value.trim(),
+        contact: contact.value.trim(),
+        website: website.value,
+        consent: consent.value,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Не удалось отправить заявку');
+    requestMessage.value = data.message || 'Заявка принята к отправке. Мы свяжемся с вами.';
+    departure.value = '';
+    destination.value = '';
+    passenger.value = '';
+    contact.value = '';
+    consent.value = false;
+  } catch (e) {
+    requestError.value = true;
+    requestMessage.value = e instanceof Error && e.message ? e.message : 'Ошибка отправки. Позвоните нам по телефону.';
+  } finally {
+    sending.value = false;
+  }
+}
 </script>
 
 
@@ -97,9 +144,9 @@ const sendRequestEmail = () => {
             <h1 id="hero-title">Перевозка инвалидов-колясочников <em>в спецавтомобиле</em> по городу и области</h1>
             <div class="hero__phone-panel">
               <span class="hero__phone-label">Позвоните и закажите поездку</span>
-              <a :href="primaryPhoneHref" class="hero__phone" aria-label="Позвонить на номер 8 8422 71 73 03">
-                <span class="hero__phone-prefix">8 (8422)</span>
-                <strong>71-73-03</strong>
+              <a :href="primaryPhoneHref" class="hero__phone" :aria-label="'Позвонить на номер ' + primaryPhone">
+                <span v-if="primaryPieces[0]" class="hero__phone-prefix">{{ primaryPieces[0] }}</span>
+                <strong>{{ primaryPieces[1] }}</strong>
               </a>
               <a :href="secondaryPhoneHref" class="hero__secondary">{{ secondaryPhone }}</a>
             </div>
@@ -166,8 +213,8 @@ const sendRequestEmail = () => {
         <div class="request-panel" id="request">
           <span class="eyebrow">ЗАЯВКА НА ПЕРЕВОЗКУ</span>
           <h2>Расскажите, куда нужно ехать</h2>
-          <p>Заполните данные: мы подготовим письмо с маршрутом для отправки. Также можно позвонить или написать в MAX.</p>
-          <form class="request-form" @submit.prevent="sendRequestEmail">
+          <p>Заполните форму — заявка автоматически поступит к нам на почту. Также можно позвонить или написать в MAX.</p>
+          <form class="request-form" @submit.prevent="sendRequest">
             <label for="taxi-from">Откуда забрать</label>
             <input id="taxi-from" v-model.trim="departure" type="text" autocomplete="street-address" placeholder="Адрес отправления" required maxlength="250" />
             <label for="taxi-to">Куда доставить</label>
@@ -176,8 +223,11 @@ const sendRequestEmail = () => {
               <div><label for="taxi-person">Ваше имя</label><input id="taxi-person" v-model.trim="passenger" type="text" autocomplete="name" placeholder="Имя" maxlength="120" /></div>
               <div><label for="taxi-phone">Телефон для связи</label><input id="taxi-phone" v-model.trim="contact" type="tel" autocomplete="tel" placeholder="+7 (___) ___-__-__" required minlength="6" maxlength="35" /></div>
             </div>
-            <button type="submit" class="cta cta--red">Подготовить письмо с заявкой</button>
-            <small id="request-note">Откроется ваша почтовая программа с заполненными данными. Проверьте письмо и нажмите «Отправить». Заявка не передаётся автоматически.</small>
+            <input v-model="website" class="request-form__honeypot" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" />
+            <label class="request-consent"><input v-model="consent" type="checkbox" required /> <span>Согласен на обработку имени, телефона и адресов поездки для ответа на заявку</span></label>
+            <button type="submit" :disabled="sending" class="cta cta--red">{{ sending ? 'Отправляем…' : 'Отправить заявку' }}</button>
+            <p v-if="requestMessage" :class="requestError ? 'request-error' : 'request-success'" role="status" aria-live="polite">{{ requestMessage }}</p>
+            <small id="request-note">Заявка направляется на почту службы перевозок. Если отправка не удалась, позвоните по телефону.</small>
             <a :href="primaryPhoneHref" class="cta cta--outline">Позвонить для заказа</a>
           </form>
         </div>
@@ -195,6 +245,12 @@ const sendRequestEmail = () => {
 </template>
 
 <style scoped>
+.request-form input[type="checkbox"]{width:auto;min-height:0;min-width:20px;height:20px;padding:0;margin:2px 0 0;flex:0 0 auto}
+.request-consent{display:flex;align-items:flex-start;gap:12px;cursor:pointer;font-size:15px!important;font-weight:600!important;line-height:1.45}
+.request-form__honeypot{position:absolute!important;left:-10000px!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}
+.request-success,.request-error{margin:4px 0;padding:12px;border-radius:8px;font-size:16px;line-height:1.5}
+.request-success{background:#e1f7eb;color:#135f3a}.request-error{background:#ffe8ed;color:#94172b}
+
 .accessible-taxi{--red:#df1036;--ink:#152135;--blue:#087e92;--muted:#3b4a5c;--pale:#f1f6f8;background:#fff;color:var(--ink);font:inherit;font-size:18px;line-height:1.5;overflow:clip}
 .accessible-taxi *{box-sizing:border-box}
 .accessible-taxi :is(a,button,input):focus-visible{outline:3px solid var(--blue);outline-offset:4px}

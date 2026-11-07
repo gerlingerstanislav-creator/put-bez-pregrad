@@ -29,6 +29,27 @@ jobs:
         run: npm run build
       - name: Verify build output
         run: node scripts/check-dist.mjs
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+      - name: Check PHP syntax
+        run: find dist/api -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Smoke test PHP endpoints
+        shell: bash
+        run: |
+          php -S 127.0.0.1:8087 -t dist >/tmp/pbp-php-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for try in 1 2 3 4 5; do
+            if curl -fsS http://127.0.0.1:8087/api/public.php -o /tmp/pbp-settings.json; then break; fi
+            sleep 1
+          done
+          grep -q 'primary_phone' /tmp/pbp-settings.json
+          curl -fsS http://127.0.0.1:8087/api/admin.php?action=session | grep -q 'csrf'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/settings.php)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8087/api/submit.php)" = 422
       - name: Verify Timeweb secrets
         env:
           FTP_HOST: ${{ secrets.TIMEWEB_FTP_HOST }}

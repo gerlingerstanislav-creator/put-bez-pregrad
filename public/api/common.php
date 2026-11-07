@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-const SITE_STORAGE = dirname(__DIR__, 2) . '/.pbp-private';
+define('SITE_STORAGE', dirname(__DIR__, 2) . '/.pbp-private');
 const INITIAL_PASSWORD_HASH = '$2y$12$aUqing2M5ALbON0zX/cM6uA.UciO4PSODn.f1O2az9iB058UR2i8q';
 
 function defaults(): array {

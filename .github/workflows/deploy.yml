@@ -1,0 +1,59 @@
+name: Build and deploy to Timeweb
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: timeweb-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate JavaScript
+        run: npm run check
+      - name: Build site
+        run: npm run build
+      - name: Verify build output
+        run: node scripts/check-dist.mjs
+      - name: Verify Timeweb secrets
+        env:
+          FTP_HOST: ${{ secrets.TIMEWEB_FTP_HOST }}
+          FTP_USER: ${{ secrets.TIMEWEB_FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.TIMEWEB_FTP_PASSWORD }}
+          FTP_DIR: ${{ secrets.TIMEWEB_FTP_DIR }}
+        shell: bash
+        run: |
+          for key in FTP_HOST FTP_USER FTP_PASSWORD FTP_DIR; do
+            if [[ -z "${!key}" ]]; then
+              echo "::error::Missing Timeweb secret: $key"
+              exit 1
+            fi
+          done
+          echo "Required secrets configured."
+      - name: Publish over FTPS
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.TIMEWEB_FTP_HOST }}
+          username: ${{ secrets.TIMEWEB_FTP_USER }}
+          password: ${{ secrets.TIMEWEB_FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          security: strict
+          local-dir: ./dist/
+          server-dir: ${{ endsWith(secrets.TIMEWEB_FTP_DIR, '/') && secrets.TIMEWEB_FTP_DIR || format('{0}/', secrets.TIMEWEB_FTP_DIR) }}
+          dangerous-clean-slate: false
+          log-level: standard

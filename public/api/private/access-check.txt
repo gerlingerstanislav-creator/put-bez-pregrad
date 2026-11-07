@@ -1,0 +1,1 @@
+Protected directory test. This file must never be publicly readable.

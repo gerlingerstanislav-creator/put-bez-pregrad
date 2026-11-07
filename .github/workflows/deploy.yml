@@ -82,7 +82,13 @@ jobs:
           dangerous-clean-slate: false
           log-level: standard
 
-      - name: Check live public API
-        continue-on-error: true
+      - name: Check live API and private storage protection
         run: |
           curl --fail --silent --show-error --location --max-time 15 http://bpreg.tw1.ru/api/public.php | grep -q 'primary_phone'
+          curl --fail --silent --show-error --location --max-time 15 http://bpreg.tw1.ru/api/admin.php?action=session | grep -q 'csrf'
+          private_status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 http://bpreg.tw1.ru/api/private/access-check.txt)"
+          if [[ "$private_status" != "403" ]]; then
+            echo "::error::Private storage access control failed: HTTP $private_status"
+            exit 1
+          fi
+          echo "Public API reachable; storage access denied."

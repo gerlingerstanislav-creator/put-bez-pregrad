@@ -51,9 +51,10 @@ jobs:
           curl -fsS http://127.0.0.1:8087/api/admin.php?action=session | grep -q 'csrf'
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/settings.php)" = 401
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8087/api/submit.php)" = 422
-      - name: Ensure release contains no runtime data
+      - name: Ensure private data is outside web root
         run: |
-          test -z "$(find dist/api/private -maxdepth 1 -type f ! -name '.htaccess' ! -name 'access-check.txt' -print -quit)"
+          test ! -d dist/api/private
+          php -r 'require "dist/api/common.php"; $root = realpath("dist"); if (str_starts_with(SITE_STORAGE, $root . DIRECTORY_SEPARATOR)) { fwrite(STDERR, "Storage must be outside web root\\n"); exit(1); }'
       - name: Verify Timeweb secrets
         env:
           FTP_HOST: ${{ secrets.TIMEWEB_FTP_HOST }}
@@ -82,13 +83,8 @@ jobs:
           dangerous-clean-slate: false
           log-level: standard
 
-      - name: Check live API and private storage protection
+      - name: Check live API
         run: |
           curl --fail --silent --show-error --location --max-time 15 http://bpreg.tw1.ru/api/public.php | grep -q 'primary_phone'
           curl --fail --silent --show-error --location --max-time 15 http://bpreg.tw1.ru/api/admin.php?action=session | grep -q 'csrf'
-          private_status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 http://bpreg.tw1.ru/api/private/access-check.txt)"
-          if [[ "$private_status" != "403" ]]; then
-            echo "::error::Private storage access control failed: HTTP $private_status"
-            exit 1
-          fi
-          echo "Public API reachable; storage access denied."
+          echo "Public API and admin sessions reachable."

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 const required = [
   'index.html','admin/index.html',
-  'api/public.php','api/admin.php','api/submit.php','api/common.php','api/settings.php',
+  'api/public.php','api/admin.php','api/submit.php','api/common.php','api/settings.php','api/mailer.php',
   'api/.htaccess',
   'images/accessible-van.avif','images/accessible-passenger.avif','images/accessible-boarding.avif',
   'images/put-bez-pregrad/favicon.svg','images/put-bez-pregrad/logo.svg','images/put-bez-pregrad/logo-light.svg',

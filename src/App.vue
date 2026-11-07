@@ -2,10 +2,11 @@
 import TransportIcon from './components/TransportIcon.vue';
 import MaxIcon from './components/MaxIcon.vue';
 import { ref, computed, onMounted } from 'vue';
+import { formatRuPhone, isCompleteRuPhone, telHref, normalizeEmail, applyPhoneInput, phoneFocus, phoneBlur } from './utils/contactInput.js';
 
 const settings = ref({
-  primary_phone: '8 (8422) 71-73-03',
-  secondary_phone: '8 (967) 771-73-03',
+  primary_phone: '+7 (8422) 71-73-03',
+  secondary_phone: '+7 (967) 771-73-03',
   contact_email: 'bezpregrad73@yandex.ru',
   max_url: 'https://max.ru/u/f9LHodD0cOIMqlrwFHrhALk5VeAh-knTiBJCLnhZSFM3iMksBuOEXJ6JMec',
 });
@@ -13,15 +14,10 @@ const primaryPhone = computed(() => settings.value.primary_phone);
 const secondaryPhone = computed(() => settings.value.secondary_phone);
 const email = computed(() => settings.value.contact_email);
 const maxUrl = computed(() => settings.value.max_url);
-function phoneHref(value) {
-  let digits = value.replace(/\D/g, '');
-  if (digits.length === 11 && digits[0] === '8') digits = '7' + digits.slice(1);
-  return 'tel:+' + digits;
-}
-const primaryPhoneHref = computed(() => phoneHref(primaryPhone.value));
-const secondaryPhoneHref = computed(() => phoneHref(secondaryPhone.value));
+const primaryPhoneHref = computed(() => telHref(primaryPhone.value));
+const secondaryPhoneHref = computed(() => telHref(secondaryPhone.value));
 const primaryPieces = computed(() => {
-  const match = primaryPhone.value.match(/^(8\s*\(\d+\))\s*(.*)$/);
+  const match = primaryPhone.value.match(/^(\+7\s*\(\d{3,4}\))\s*(.*)$/);
   return match ? [match[1], match[2]] : ['', primaryPhone.value];
 });
 const brandLogo = '/images/put-bez-pregrad/logo.svg';
@@ -40,13 +36,22 @@ const requestMessage = ref('');
 const requestError = ref(false);
 const mobileMenuOpen = ref(false);
 const closeMenu = () => { mobileMenuOpen.value = false; };
+const closeMenuOnOutsideClick = (event) => {
+  if (mobileMenuOpen.value && !event.target.closest('.site-header__inner')) closeMenu();
+};
 
 onMounted(async () => {
   try {
     const response = await fetch('/api/public.php', { cache: 'no-store' });
     if (!response.ok) return;
     const data = await response.json();
-    if (data && data.settings) settings.value = { ...settings.value, ...data.settings };
+    if (data && data.settings) settings.value = {
+      ...settings.value,
+      ...data.settings,
+      primary_phone: formatRuPhone(data.settings.primary_phone || settings.value.primary_phone),
+      secondary_phone: formatRuPhone(data.settings.secondary_phone || settings.value.secondary_phone),
+      contact_email: normalizeEmail(data.settings.contact_email || settings.value.contact_email),
+    };
   } catch {
     // Default contacts remain visible if API is temporarily unreachable.
   }
@@ -54,6 +59,11 @@ onMounted(async () => {
 
 async function sendRequest() {
   if (sending.value || !departure.value.trim() || !destination.value.trim() || !contact.value.trim() || !consent.value) return;
+  if (!isCompleteRuPhone(contact.value)) {
+    requestError.value = true;
+    requestMessage.value = 'Проверьте телефон: нужны 10 цифр после +7';
+    return;
+  }
   sending.value = true;
   requestMessage.value = '';
   requestError.value = false;
@@ -90,15 +100,13 @@ async function sendRequest() {
 
 
 <template>
-  <div class="accessible-taxi" id="top">
+  <div class="accessible-taxi" id="top" @click="closeMenuOnOutsideClick">
     <header class="site-header">
       <div class="site-header__inner">
-        <a href="#top" class="logo" aria-label="Путь без преград — наверх">
-          <img class="logo__image" :src="brandLogo" width="300" height="93" alt="Путь без преград — доступные перевозки" />
-        </a>
         <button
           type="button"
           class="transport-menu-toggle"
+          :aria-label="mobileMenuOpen ? 'Закрыть меню' : 'Открыть меню'"
           :aria-expanded="mobileMenuOpen"
           aria-controls="landing-navigation"
           @click="mobileMenuOpen = !mobileMenuOpen"
@@ -109,6 +117,9 @@ async function sendRequest() {
           </svg>
           <span>{{ mobileMenuOpen ? 'Закрыть' : 'Меню' }}</span>
         </button>
+        <a href="#top" class="logo" aria-label="Путь без преград — наверх">
+          <img class="logo__image" :src="brandLogo" width="300" height="93" alt="Путь без преград — доступные перевозки" />
+        </a>
         <nav
           id="landing-navigation"
           class="header-nav"
@@ -221,7 +232,7 @@ async function sendRequest() {
             <input id="taxi-to" v-model.trim="destination" type="text" placeholder="Адрес назначения" required maxlength="250" />
             <div class="request-form__row">
               <div><label for="taxi-person">Ваше имя</label><input id="taxi-person" v-model.trim="passenger" type="text" autocomplete="name" placeholder="Имя" maxlength="120" /></div>
-              <div><label for="taxi-phone">Телефон для связи</label><input id="taxi-phone" v-model.trim="contact" type="tel" autocomplete="tel" placeholder="+7 (___) ___-__-__" required minlength="6" maxlength="35" /></div>
+              <div><label for="taxi-phone">Телефон для связи</label><input id="taxi-phone" v-model.trim="contact" type="tel" autocomplete="tel" inputmode="tel" placeholder="+7 (999) 123-45-67" required maxlength="21" @input="applyPhoneInput($event, value => contact = value)" @focus="phoneFocus($event, value => contact = value)" @blur="phoneBlur($event, value => contact = value)" /></div>
             </div>
             <input v-model="website" class="request-form__honeypot" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" />
             <label class="request-consent"><input v-model="consent" type="checkbox" required /> <span>Согласен на обработку имени, телефона и адресов поездки для ответа на заявку</span></label>
@@ -245,6 +256,7 @@ async function sendRequest() {
 </template>
 
 <style scoped>
+
 .request-form input[type="checkbox"]{width:auto;min-height:0;min-width:20px;height:20px;padding:0;margin:2px 0 0;flex:0 0 auto}
 .request-consent{display:flex;align-items:flex-start;gap:12px;cursor:pointer;font-size:15px!important;font-weight:600!important;line-height:1.45}
 .request-form__honeypot{position:absolute!important;left:-10000px!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}
@@ -406,4 +418,23 @@ async function sendRequest() {
   .site-footer__inner .footer-contact a{overflow-wrap:anywhere;word-break:normal}
   .site-footer__inner nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 }
+
+/* Navigation overlays the page instead of changing the header's height. */
+@media(max-width:1460px) {
+  .site-header__inner{position:relative}
+  .site-header__inner .logo{order:0}
+  .site-header__inner .transport-menu-toggle{order:1}
+  .site-header__inner .header-contacts{order:2}
+  .site-header__inner .header-nav{position:absolute;top:100%;left:26px;right:26px;width:auto;max-height:min(70vh,520px);overflow-y:auto;margin:0;flex-basis:auto;order:3;z-index:120;box-shadow:0 18px 36px #122e4530;background:white}
+}
+@media(max-width:600px){
+  .site-header__inner{display:flex;position:relative;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 16px}
+  .site-header__inner .transport-menu-toggle{position:static;order:0;display:inline-flex;flex:0 0 auto;margin:0;padding:9px 11px;z-index:auto}
+  .site-header__inner .transport-menu-toggle span{display:none}
+  .site-header__inner .logo{display:flex;order:1;align-items:center;flex:1 1 auto;width:auto;min-width:0}
+  .site-header__inner .logo__image{width:min(100%,213px);height:auto}
+  .site-header__inner .header-contacts{order:2;display:flex;flex:1 1 100%;width:100%;min-width:0;margin:3px 0 0}
+  .site-header__inner .header-nav{position:absolute;top:100%;left:12px;right:12px;width:auto;max-height:calc(100dvh - 135px);margin:0}
+}
+
 </style>

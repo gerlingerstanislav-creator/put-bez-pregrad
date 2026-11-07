@@ -4,4 +4,5 @@ require_once __DIR__ . '/common.php';
 start_admin_session();
 require_admin();
 only_method('GET');
-response_json(['settings' => current_state()['settings'], 'csrf' => $_SESSION['csrf']]);
+$state = current_state();
+response_json(['settings' => $state['settings'], 'smtp' => smtp_public_status($state), 'csrf' => $_SESSION['csrf']]);

@@ -6,8 +6,8 @@ const INITIAL_PASSWORD_HASH = '$2y$12$aUqing2M5ALbON0zX/cM6uA.UciO4PSODn.f1O2az9
 
 function defaults(): array {
     return [
-        'primary_phone' => '8 (8422) 71-73-03',
-        'secondary_phone' => '8 (967) 771-73-03',
+        'primary_phone' => '+7 (8422) 71-73-03',
+        'secondary_phone' => '+7 (967) 771-73-03',
         'contact_email' => 'bezpregrad73@yandex.ru',
         'request_email' => 'bezpregrad73@yandex.ru',
         'max_url' => 'https://max.ru/u/f9LHodD0cOIMqlrwFHrhALk5VeAh-knTiBJCLnhZSFM3iMksBuOEXJ6JMec',
@@ -150,4 +150,38 @@ function clean_single_line(mixed $value, int $limit): ?string {
     $value = trim($value);
     if ($value === '' || strlen($value) > $limit || preg_match('/[\x00-\x1F\x7F]/u', $value)) return null;
     return $value;
+}
+
+
+/** Normalize a full Russian phone; support 8/+7/10-digit national input. */
+function format_ru_phone(mixed $value): ?string {
+    if (!is_string($value) || strlen($value) > 80) return null;
+    $digits = preg_replace('/\D+/', '', $value);
+    if (!is_string($digits)) return null;
+    if (strlen($digits) === 11 && ($digits[0] === '7' || $digits[0] === '8')) {
+        $digits = substr($digits, 1);
+    }
+    if (strlen($digits) !== 10) return null;
+    if (str_starts_with($digits, '8422')) {
+        return '+7 (8422) ' . substr($digits, 4, 2) . '-' . substr($digits, 6, 2) . '-' . substr($digits, 8, 2);
+    }
+    return '+7 (' . substr($digits, 0, 3) . ') ' .
+        substr($digits, 3, 3) . '-' . substr($digits, 6, 2) . '-' . substr($digits, 8, 2);
+}
+function normalized_email(mixed $value): ?string {
+    if (!is_string($value)) return null;
+    $value = trim($value);
+    if (strlen($value) > 250 || str_contains($value, "\r") || str_contains($value, "\n")) return null;
+    $at = strrpos($value, '@');
+    if ($at === false) return null;
+    $value = substr($value, 0, $at + 1) . strtolower(substr($value, $at + 1));
+    return filter_var($value, FILTER_VALIDATE_EMAIL) ? $value : null;
+}
+function smtp_public_status(array $state): array {
+    $smtp = $state['smtp'] ?? [];
+    return [
+        'host' => in_array($smtp['host'] ?? '', ['smtp.timeweb.ru', 'smtp.yandex.ru'], true) ? $smtp['host'] : 'smtp.timeweb.ru',
+        'user' => is_string($smtp['user'] ?? null) ? $smtp['user'] : '',
+        'configured' => is_string($smtp['password'] ?? null) && $smtp['password'] !== '',
+    ];
 }

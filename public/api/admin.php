@@ -34,15 +34,12 @@ if ($action === 'logout') {
 if ($action === 'settings') {
     $s = $data['settings'] ?? null;
     if (!is_array($s) || array_is_list($s)) response_json(['error' => 'Неверные настройки'], 422);
-    $primary = clean_single_line($s['primary_phone'] ?? null, 80);
-    $secondary = clean_single_line($s['secondary_phone'] ?? null, 80);
-    $contact = clean_single_line($s['contact_email'] ?? null, 250);
-    $request = clean_single_line($s['request_email'] ?? null, 250);
+    $primary = format_ru_phone($s['primary_phone'] ?? null);
+    $secondary = format_ru_phone($s['secondary_phone'] ?? null);
+    $contact = normalized_email($s['contact_email'] ?? null);
+    $request = normalized_email($s['request_email'] ?? null);
     $max = clean_single_line($s['max_url'] ?? null, 600);
-    if (!$primary || !$secondary ||
-        !preg_match('/^[+\d()\s.-]{6,80}$/', $primary) ||
-        !preg_match('/^[+\d()\s.-]{6,80}$/', $secondary) ||
-        !filter_var($contact, FILTER_VALIDATE_EMAIL) || !filter_var($request, FILTER_VALIDATE_EMAIL) ||
+    if (!$primary || !$secondary || !$contact || !$request ||
         !$max || !str_starts_with($max, 'https://max.ru/')) {
         response_json(['error' => 'Проверьте номера телефонов, почты и ссылку MAX'], 422);
     }
@@ -58,6 +55,49 @@ if ($action === 'settings') {
         return $state;
     });
     response_json(['ok' => true, 'settings' => $settings]);
+}
+if ($action === 'smtp') {
+    if (!throttle('admin-smtp-config', 15, 600)) response_json(['error' => 'Слишком много попыток'], 429);
+    $host = $data['host'] ?? null;
+    $user = normalized_email($data['user'] ?? null);
+    $pass = $data['password'] ?? null;
+    if (!is_string($host) || !in_array($host, ['smtp.timeweb.ru', 'smtp.yandex.ru'], true) ||
+        !$user || !is_string($pass) || strlen($pass) > 512) {
+        response_json(['error' => 'Проверьте сервис, почтовый адрес и пароль'], 422);
+    }
+    $state = current_state();
+    $current = is_array($state['smtp'] ?? null) ? $state['smtp'] : [];
+    if ($pass === '' && ($user !== ($current['user'] ?? null) || $host !== ($current['host'] ?? null))) {
+        response_json(['error' => 'При изменении SMTP-логина или сервиса укажите пароль'], 422);
+    }
+    $password = $pass !== '' ? $pass : ($current['password'] ?? '');
+    if (!is_string($password) || $password === '') response_json(['error' => 'Укажите пароль почтового ящика'], 422);
+    $state = update_state(static function (array $state) use ($host, $user, $password): array {
+        $state['smtp'] = ['host' => $host, 'user' => $user, 'password' => $password];
+        return $state;
+    });
+    response_json(['ok' => true, 'smtp' => smtp_public_status($state)]);
+}
+if ($action === 'test-email') {
+    if (!throttle('admin-email-test', 4, 600)) response_json(['error' => 'Слишком много тестов. Повторите позднее'], 429);
+    $state = current_state();
+    if (!smtp_public_status($state)['configured']) response_json(['error' => 'Сначала сохраните настройки SMTP'], 422);
+    $recipient = normalized_email($state['settings']['request_email'] ?? null);
+    if (!$recipient) response_json(['error' => 'Укажите корректную почту получения заявок'], 422);
+    require_once __DIR__ . '/mailer.php';
+    try {
+        send_site_message($state['smtp'], $recipient,
+            'Тест почты — Путь без преград',
+            "Тестовое сообщение отправлено из панели администрирования сайта.\nЕсли письмо пришло, SMTP настроен корректно.");
+    } catch (Throwable $e) {
+        // Diagnostic is visible only to an authenticated admin.
+        $kind = $e->getMessage();
+        if (str_starts_with($kind, 'SMTP_SEND_FAILED:')) {
+            response_json(['error' => 'SMTP отклонил письмо. Проверьте логин, пароль приложения и настройки сервиса. Код: SMTP_SEND_FAILED'], 502);
+        }
+        response_json(['error' => 'Не удалось отправить тестовое письмо: ' . substr($kind, 0, 80)], 502);
+    }
+    response_json(['ok' => true, 'message' => 'SMTP принял тестовое письмо. Проверьте папку входящих и спам']);
 }
 if ($action === 'password') {
     $current = $data['current_password'] ?? null;

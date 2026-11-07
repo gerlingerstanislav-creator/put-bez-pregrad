@@ -1,5 +1,6 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue';
+import {formatRuPhone, isCompleteRuPhone, normalizeEmail, applyPhoneInput, phoneFocus, phoneBlur} from './utils/contactInput.js';
 
 const loaded = ref(false);
 const authorized = ref(false);
@@ -16,6 +17,8 @@ const settings = reactive({
   request_email: '',
   max_url: '',
 });
+const smtp = reactive({host: 'smtp.timeweb.ru', user: '', password: '', configured: false});
+
 function showError(e) { error.value = e.message || 'Произошла ошибка'; notice.value = ''; }
 function showOk(message) { notice.value = message; error.value = ''; }
 async function request(url, data) {
@@ -34,7 +37,14 @@ async function request(url, data) {
 }
 async function readSettings() {
   const data = await request('/api/settings.php');
-  Object.assign(settings, data.settings);
+  Object.assign(settings, data.settings, {
+    primary_phone: formatRuPhone(data.settings.primary_phone),
+    secondary_phone: formatRuPhone(data.settings.secondary_phone),
+    contact_email: normalizeEmail(data.settings.contact_email),
+    request_email: normalizeEmail(data.settings.request_email),
+  });
+  Object.assign(smtp, data.smtp || {});
+  smtp.password = '';
   csrf.value = data.csrf;
 }
 onMounted(async () => {
@@ -59,11 +69,44 @@ async function login() {
   finally { busy.value = false; }
 }
 async function save() {
+  settings.primary_phone = formatRuPhone(settings.primary_phone);
+  settings.secondary_phone = formatRuPhone(settings.secondary_phone);
+  settings.contact_email = normalizeEmail(settings.contact_email);
+  settings.request_email = normalizeEmail(settings.request_email);
+  if (!isCompleteRuPhone(settings.primary_phone) || !isCompleteRuPhone(settings.secondary_phone)) {
+    showError(new Error('Введите оба номера полностью: +7 и 10 цифр'));
+    return;
+  }
   busy.value = true;
   try {
     await request('/api/admin.php?action=settings', { settings: { ...settings } });
     showOk('Контакты сохранены и уже доступны на сайте');
   } catch (e) { showError(e); }
+  finally { busy.value = false; }
+}
+
+async function saveSmtp() {
+  if (!smtp.user || (!smtp.password && !smtp.configured)) {
+    showError(new Error('Укажите почтовый ящик отправителя и его пароль'));
+    return;
+  }
+  busy.value = true;
+  try {
+    const result = await request('/api/admin.php?action=smtp', {
+      host: smtp.host, user: normalizeEmail(smtp.user), password: smtp.password,
+    });
+    Object.assign(smtp, result.smtp);
+    smtp.password = '';
+    showOk('Настройки SMTP сохранены. Теперь проверьте тестовым письмом');
+  } catch (e) { showError(e); }
+  finally { busy.value = false; }
+}
+async function testSmtp() {
+  busy.value = true;
+  try {
+    const data = await request('/api/admin.php?action=test-email', {});
+    showOk(data.message || 'Тестовое письмо принято SMTP-сервером. Проверьте почту');
+  } catch(e) { showError(e); }
   finally { busy.value = false; }
 }
 async function changePassword() {
@@ -122,16 +165,37 @@ async function logout() {
           <p>Телефоны, почта и MAX меняются сразу во всех блоках публичного сайта.</p>
           <form class="form" @submit.prevent="save">
             <label for="phone1">Основной телефон</label>
-            <input id="phone1" v-model.trim="settings.primary_phone" autocomplete="off" required maxlength="80"/>
+            <input id="phone1" v-model="settings.primary_phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 (999) 123-45-67" required maxlength="21" @input="applyPhoneInput($event, value => settings.primary_phone = value)" @focus="phoneFocus($event, value => settings.primary_phone = value)" @blur="phoneBlur($event, value => settings.primary_phone = value)"/>
             <label for="phone2">Дополнительный телефон</label>
-            <input id="phone2" v-model.trim="settings.secondary_phone" autocomplete="off" required maxlength="80"/>
+            <input id="phone2" v-model="settings.secondary_phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 (999) 123-45-67" required maxlength="21" @input="applyPhoneInput($event, value => settings.secondary_phone = value)" @focus="phoneFocus($event, value => settings.secondary_phone = value)" @blur="phoneBlur($event, value => settings.secondary_phone = value)"/>
             <label for="email1">Почта на сайте</label>
-            <input id="email1" v-model.trim="settings.contact_email" type="email" autocomplete="off" required maxlength="250"/>
+            <input id="email1" v-model.trim="settings.contact_email" type="email" inputmode="email" autocomplete="email" autocapitalize="off" :spellcheck="false" required maxlength="250" @blur="settings.contact_email = normalizeEmail(settings.contact_email)"/>
             <label for="email2">Почта для получения заявок</label>
-            <input id="email2" v-model.trim="settings.request_email" type="email" autocomplete="off" required maxlength="250"/>
+            <input id="email2" v-model.trim="settings.request_email" type="email" inputmode="email" autocomplete="email" autocapitalize="off" :spellcheck="false" required maxlength="250" @blur="settings.request_email = normalizeEmail(settings.request_email)"/>
             <label for="max">Ссылка на профиль MAX</label>
             <input id="max" v-model.trim="settings.max_url" type="url" autocomplete="off" required maxlength="600" placeholder="https://max.ru/..."/>
             <button :disabled="busy" type="submit">{{ busy ? 'Сохраняем…' : 'Сохранить контакты' }}</button>
+          </form>
+        </section>
+        <section class="panel">
+          <h2>Отправка заявок по SMTP</h2>
+          <p>Почта для заявок указывается выше. Здесь настраивается ящик, <strong>от имени которого</strong> сайт отправляет письма. Почтовый ящик должен поддерживать SMTP. Пароль не показывается после сохранения.</p>
+          <p :class="smtp.configured ? 'notice' : 'warning'" role="status">
+            {{ smtp.configured ? 'SMTP настроен. Проверьте доставку тестовым письмом.' : 'SMTP пока не настроен. Без него автоматическая отправка не работает.' }}
+          </p>
+          <form class="form" @submit.prevent="saveSmtp">
+            <label for="smtp-host">Почтовый сервис</label>
+            <select id="smtp-host" v-model="smtp.host">
+              <option value="smtp.timeweb.ru">Timeweb — smtp.timeweb.ru</option>
+              <option value="smtp.yandex.ru">Яндекс — smtp.yandex.ru</option>
+            </select>
+            <label for="smtp-user">Почта отправителя (SMTP-логин)</label>
+            <input id="smtp-user" v-model.trim="smtp.user" type="email" inputmode="email" autocomplete="username" autocapitalize="off" :spellcheck="false" required maxlength="250" @blur="smtp.user = normalizeEmail(smtp.user)" placeholder="noreply@example.ru"/>
+            <label for="smtp-password">Пароль почтового ящика / пароль приложения</label>
+            <input id="smtp-password" v-model="smtp.password" type="password" autocomplete="new-password" :required="!smtp.configured" :placeholder="smtp.configured ? 'Оставьте пустым, чтобы не менять' : 'Введите пароль SMTP'" maxlength="512"/>
+            <p class="hint">Для Яндекса обычно нужен отдельный пароль приложения. Соединение с SMTP шифруется (STARTTLS, порт 587), но сама админка пока работает по HTTP.</p>
+            <button :disabled="busy" type="submit">{{ busy ? 'Сохраняем…' : 'Сохранить SMTP' }}</button>
+            <button type="button" class="ghost" :disabled="busy || !smtp.configured" @click="testSmtp">Отправить тестовое письмо на {{ settings.request_email }}</button>
           </form>
         </section>
         <section class="panel">
@@ -162,10 +226,11 @@ h1{font-size:clamp(28px,4vw,40px);line-height:1.2;margin:0 0 5px}
 .panel{background:white;padding:clamp(22px,4vw,36px);border-radius:16px;border:1px solid #dce5eb;margin-top:22px}
 .panel h2{font-size:23px;margin:0 0 15px}
 .panel p{color:#526275}
+.panel p.warning{color:#62420f}.panel p.notice{color:#13653d}.panel .hint{font-size:14px;line-height:1.5}
 .form{display:grid;gap:10px}
 .form label{margin-top:10px;font-weight:750}
-.form input{width:100%;padding:12px 13px;border:1px solid #9cabbb;border-radius:8px;font-size:17px;min-height:49px;color:#152135;background:#fff}
-.form input:focus-visible,.admin button:focus-visible{outline:3px solid #087e92;outline-offset:2px}
+.form input,.form select{width:100%;padding:12px 13px;border:1px solid #9cabbb;border-radius:8px;font-size:17px;min-height:49px;color:#152135;background:#fff}
+.form input:focus-visible,.form select:focus-visible,.admin button:focus-visible{outline:3px solid #087e92;outline-offset:2px}
 .admin button{border:0;border-radius:9px;min-height:48px;padding:10px 18px;cursor:pointer;background:#df1036;color:#fff;font-weight:800;font-size:16px}
 .form button{margin-top:18px}
 .admin button:disabled{opacity:.55;cursor:wait}

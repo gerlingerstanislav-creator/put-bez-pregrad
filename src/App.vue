@@ -20,8 +20,8 @@ const primaryPieces = computed(() => {
   const match = primaryPhone.value.match(/^(\+7\s*\(\d{3,4}\))\s*(.*)$/);
   return match ? [match[1], match[2]] : ['', primaryPhone.value];
 });
-const brandLogo = '/images/put-bez-pregrad/logo.svg';
-const brandLogoLight = '/images/put-bez-pregrad/logo-light.svg';
+const brandLogo = '/images/put-bez-pregrad/favicon.svg';
+const brandLogoLight = '/images/put-bez-pregrad/brand-symbol-light.svg';
 const photoVan = '/images/accessible-van.avif';
 const photoPassenger = '/images/accessible-passenger.avif';
 const photoBoarding = '/images/accessible-boarding.avif';
@@ -118,7 +118,11 @@ async function sendRequest() {
           <span>{{ mobileMenuOpen ? 'Закрыть' : 'Меню' }}</span>
         </button>
         <a href="#top" class="logo" aria-label="Путь без преград — наверх">
-          <img class="logo__image" :src="brandLogo" width="300" height="93" alt="Путь без преград — доступные перевозки" />
+          <img class="brand-symbol" :src="brandLogo" width="74" height="74" alt="" />
+          <span class="brand-wordmark" aria-hidden="true">
+            <span>Путь</span>
+            <span><span class="brand-wordmark__accent">без</span> преград</span>
+          </span>
         </a>
         <nav
           id="landing-navigation"
@@ -246,7 +250,16 @@ async function sendRequest() {
     </main>
     <footer class="site-footer">
       <div class="container site-footer__inner">
-        <div class="footer-brand"><a class="footer-brand__link" href="#top" aria-label="Путь без преград — наверх"><img :src="brandLogoLight" class="footer-brand__image" width="300" height="93" alt="Путь без преград — доступные перевозки" /></a><p>Перевозка людей на инвалидных колясках<br>Ульяновск и Ульяновская область</p></div>
+        <div class="footer-brand">
+          <a class="footer-brand__link" href="#top" aria-label="Путь без преград — наверх">
+            <img class="footer-brand__symbol" :src="brandLogoLight" width="86" height="86" alt="" />
+            <span class="footer-brand__name" aria-hidden="true">
+              <span>Путь</span>
+              <span><span class="footer-brand__accent">без</span> преград</span>
+            </span>
+          </a>
+          <p>Перевозка людей на инвалидных колясках<br>Ульяновск и Ульяновская область</p>
+        </div>
         <nav aria-label="Навигация в подвале"><a href="#benefits">Преимущества</a><a href="#destinations">С сопровождением</a><a href="#fleet">Автопарк</a><a href="#pricing">Стоимость</a><a href="#request">Контакты</a></nav>
         <div class="footer-contact"><a :href="primaryPhoneHref">{{ primaryPhone }}</a><a :href="secondaryPhoneHref">{{ secondaryPhone }}</a><a :href="'mailto:' + email">{{ email }}</a></div>
         <a class="max-link" :href="maxUrl" target="_blank" rel="noopener noreferrer" aria-label="Написать в MAX"><span class="max-icon"><MaxIcon /></span></a>
@@ -435,6 +448,28 @@ async function sendRequest() {
   .site-header__inner .logo__image{width:min(100%,213px);height:auto}
   .site-header__inner .header-contacts{order:2;display:flex;flex:1 1 100%;width:100%;min-width:0;margin:3px 0 0}
   .site-header__inner .header-nav{position:absolute;top:100%;left:12px;right:12px;width:auto;max-height:calc(100dvh - 135px);margin:0}
+}
+
+/* Shared approved transport symbol in the header and footer.
+   The former image wordmarks stay on disk for rollback. */
+.logo{gap:7px}
+.brand-symbol{display:block;width:74px;height:74px;flex:0 0 auto;object-fit:contain}
+.brand-wordmark{display:flex;flex-direction:column;min-width:0;white-space:nowrap;font-size:27px;line-height:1.05;font-weight:900;letter-spacing:-.045em;color:#1f2e36}
+.brand-wordmark__accent{color:var(--red)}
+.footer-brand__link{display:inline-flex;align-items:center;gap:7px;color:#fff}
+.footer-brand__symbol{display:block;width:86px;height:86px;flex:0 0 auto;object-fit:contain}
+.footer-brand__name{display:flex;flex-direction:column;white-space:nowrap;font-size:29px;font-weight:900;line-height:1.04;letter-spacing:-.04em;color:#f7fbfe}
+.footer-brand__accent{color:#ff5371}
+@media(max-width:600px){
+  .site-header__inner .logo{gap:5px}
+  .site-header__inner .brand-symbol{width:56px;height:56px}
+  .site-header__inner .brand-wordmark{font-size:clamp(18px,5.5vw,23px)}
+  .footer-brand__symbol{width:72px;height:72px}
+  .footer-brand__name{font-size:25px}
+}
+@media(max-width:380px){
+  .site-header__inner .brand-symbol{width:51px;height:51px}
+  .site-header__inner .brand-wordmark{font-size:18px}
 }
 
 </style>

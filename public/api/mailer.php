@@ -33,7 +33,11 @@ function send_site_message(array $smtp, string $recipient, string $subject, stri
     $mailer->SMTPAutoTLS = true;
     $mailer->Timeout = 12;
     $mailer->CharSet = PHPMailer::CHARSET_UTF8;
-    $mailer->Username = $user;
+    // Yandex's personal mail accounts use the local part for SMTP authorization.
+    // The message From address must still be the full verified mailbox.
+    $mailer->Username = $host === 'smtp.yandex.ru' && str_ends_with($user, '@yandex.ru')
+        ? substr($user, 0, strpos($user, '@'))
+        : $user;
     $mailer->Password = $password;
     $mailer->setFrom($user, 'Путь без преград');
     $mailer->addAddress($recipient);

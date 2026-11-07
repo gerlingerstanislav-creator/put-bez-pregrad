@@ -51,7 +51,7 @@ function input_json(): array {
     } catch (JsonException $e) {
         response_json(['error' => 'Неверный формат данных'], 400);
     }
-    if (!is_array($data) || array_is_list($data)) response_json(['error' => 'Неверный формат'], 400);
+    if (!is_array($data) || !str_starts_with(ltrim($raw), '{')) response_json(['error' => 'Неверный формат'], 400);
     return $data;
 }
 function storage_ready(): void {

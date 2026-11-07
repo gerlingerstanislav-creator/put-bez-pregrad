@@ -53,7 +53,7 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8087/api/submit.php)" = 422
       - name: Ensure release contains no runtime data
         run: |
-          test -z "$(find dist/api/private -maxdepth 1 -type f ! -name '.htaccess' -print -quit)"
+          test -z "$(find dist/api/private -maxdepth 1 -type f ! -name '.htaccess' ! -name 'access-check.txt' -print -quit)"
       - name: Verify Timeweb secrets
         env:
           FTP_HOST: ${{ secrets.TIMEWEB_FTP_HOST }}

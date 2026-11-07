@@ -97,7 +97,7 @@ if ($action === 'test-email') {
             'SMTP_ADDRESS_INVALID' => 'Некорректный адрес отправителя или получателя.',
             'SMTP_AUTH_FAILED' => 'SMTP-сервер отклонил авторизацию. Проверьте полный адрес ящика и его пароль.',
             'SMTP_TLS_FAILED' => 'Не удалось установить защищённое SMTP-соединение (STARTTLS).',
-            'SMTP_CONNECTION_FAILED' => 'Сайт не смог подключиться к серверу smtp.timeweb.ru:587.',
+            'SMTP_CONNECTION_FAILED' => 'Не удалось установить SMTP-соединение. Для Timeweb используется порт 465/SSL, для Яндекса — 587/STARTTLS.',
             'SMTP_ADDRESS_REJECTED' => 'SMTP-сервер отклонил адрес отправителя или получателя.',
             'SMTP_SEND_FAILED' => 'Почтовый сервер вернул ошибку отправки. Нужна диагностика SMTP-ответа.',
         ];

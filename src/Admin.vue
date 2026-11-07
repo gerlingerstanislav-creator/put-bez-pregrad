@@ -193,7 +193,7 @@ async function logout() {
             <input id="smtp-user" v-model.trim="smtp.user" type="text" inputmode="email" autocomplete="username" autocapitalize="off" :spellcheck="false" required maxlength="250" @blur="smtp.user = normalizeEmail(smtp.user)" placeholder="noreply@пример.рф"/>
             <label for="smtp-password">Пароль почтового ящика / пароль приложения</label>
             <input id="smtp-password" v-model="smtp.password" type="password" autocomplete="new-password" :required="!smtp.configured" :placeholder="smtp.configured ? 'Оставьте пустым, чтобы не менять' : 'Введите пароль SMTP'" maxlength="512"/>
-            <p class="hint">Для Яндекса обычно нужен отдельный пароль приложения. Соединение с SMTP шифруется (STARTTLS, порт 587), но сама админка пока работает по HTTP.</p>
+            <p class="hint">Для Яндекса обычно нужен отдельный пароль приложения. SMTP защищён: Timeweb — SSL/TLS, порт 465; Яндекс — STARTTLS, порт 587. Сама админка пока работает по HTTP.</p>
             <button :disabled="busy" type="submit">{{ busy ? 'Сохраняем…' : 'Сохранить SMTP' }}</button>
             <button type="button" class="ghost" :disabled="busy || !smtp.configured" @click="testSmtp">Отправить тестовое письмо на {{ settings.request_email }}</button>
           </form>

@@ -4,7 +4,7 @@ declare(strict_types=1);
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
-/** Send with authenticated STARTTLS. Never retain request contents on disk. */
+/** Send with authenticated encrypted SMTP. Never retain request contents on disk. */
 function send_site_message(array $smtp, string $recipient, string $subject, string $body): void {
     $host = $smtp['host'] ?? '';
     // Migrate Unicode-domain SMTP usernames transparently without rewriting saved credentials.
@@ -23,9 +23,14 @@ function send_site_message(array $smtp, string $recipient, string $subject, stri
     try {
         $mailer->isSMTP();
         $mailer->Host = $host;
-        $mailer->Port = 587;
+        // Timeweb supports both 587/STARTTLS and 465/implicit TLS; try 465
+        // because the current server reports a connection failure on port 587.
+        // Keep Yandex on its existing supported 587/STARTTLS configuration.
+        $mailer->Port = $host === 'smtp.timeweb.ru' ? 465 : 587;
         $mailer->SMTPAuth = true;
-        $mailer->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mailer->SMTPSecure = $host === 'smtp.timeweb.ru'
+            ? PHPMailer::ENCRYPTION_SMTPS
+            : PHPMailer::ENCRYPTION_STARTTLS;
         $mailer->SMTPAutoTLS = true;
         $mailer->Timeout = 12;
         $mailer->CharSet = PHPMailer::CHARSET_UTF8;

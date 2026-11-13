@@ -28,9 +28,10 @@ function response_json(array $body, int $status = 200): never {
  */
 function request_is_https(): bool
 {
+    // Do not trust a client-supplied X-Forwarded-Proto header: it can
+    // bypass transport protection if the reverse proxy does not overwrite it.
     return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-        || (int) ($_SERVER['SERVER_PORT'] ?? 0) === 443
-        || strtolower(trim(explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''))[0])) === 'https';
+        || (int) ($_SERVER['SERVER_PORT'] ?? 0) === 443;
 }
 
 function require_https(): void

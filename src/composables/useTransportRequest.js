@@ -45,7 +45,11 @@ export function useTransportRequest() {
     requestMessage.value = '';
 
     try {
-      if (!challenge.value) await renewChallenge();
+      if (!challenge.value) {
+        await renewChallenge();
+        // A newly issued challenge is deliberately too young for the server.
+        await new Promise((resolve) => setTimeout(resolve, 3200));
+      }
 
       const response = await fetch('/api/submit.php', {
         method: 'POST',

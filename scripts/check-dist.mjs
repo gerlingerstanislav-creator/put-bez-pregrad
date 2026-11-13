@@ -22,6 +22,11 @@ const oldAdmin = fs.readFileSync('dist/admin/index.html', 'utf8');
 if (oldAdmin.includes('assets/') || oldAdmin.includes('src/admin.js')) {
   throw Error('Old /admin/ must not expose a login interface');
 }
+for (const forbidden of ['dist/login/index.html', 'dist/admin/index.html']) {
+  if (!fs.readFileSync(forbidden, 'utf8').includes('Страница не найдена.')) {
+    throw Error('Retired entry must not contain a login page: ' + forbidden);
+  }
+}
 for (const file of ['admin.php', 'settings.php']) {
   if (!fs.readFileSync('dist/api/' + file, 'utf8').includes('http_response_code(404)')) {
     throw Error('Old /api/' + file + ' must return 404');

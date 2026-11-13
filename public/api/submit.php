@@ -1,22 +1,28 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/common.php';
+require_once __DIR__ . '/spam.php';
 only_method('POST');
 same_origin();
 $data = input_json();
 if (!empty($data['website'])) response_json(['ok' => true]);
-if (!throttle('public-request', 5, 600)) response_json(['error' => 'Слишком много заявок. Позвоните нам по телефону'], 429);
-$from = clean_single_line($data['departure'] ?? null, 800);
-$to = clean_single_line($data['destination'] ?? null, 800);
-$phone = clean_single_line($data['contact'] ?? null, 100);
+$from = clean_single_line($data['departure'] ?? null, 250);
+$to = clean_single_line($data['destination'] ?? null, 250);
+$phone = clean_single_line($data['contact'] ?? null, 35);
 $name = $data['passenger'] ?? '';
-$name = $name === '' ? 'Не указано' : clean_single_line($name, 320);
+$name = $name === '' ? 'Не указано' : clean_single_line($name, 120);
 if (!$from || !$to || !$phone || !$name || empty($data['consent'])) {
     response_json(['error' => 'Заполните обязательные поля и согласие'], 422);
 }
 $formattedPhone = format_ru_phone($phone);
 if (!$formattedPhone) response_json(['error' => 'Введите полный номер телефона +7'], 422);
 $phone = $formattedPhone;
+if (!form_challenge_is_valid($data['challenge'] ?? null)) {
+    response_json(['error' => 'Не удалось подтвердить заявку. Подождите несколько секунд и попробуйте снова'], 403);
+}
+if (!throttle('public-request', 5, 600)
+    || !throttle('request-phone-' . hash('sha256', $phone), 3, 3600)) {
+    response_json(['error' => 'Слишком много заявок. Позвоните нам по телефону'], 429);
+}
 $recipient = current_state()['settings']['request_email'] ?? '';
 if (!is_string($recipient) || !filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
     response_json(['error' => 'Отправка временно недоступна. Позвоните нам'], 503);

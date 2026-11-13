@@ -2,7 +2,8 @@
 import TransportIcon from './components/TransportIcon.vue';
 import MaxIcon from './components/MaxIcon.vue';
 import { ref, computed, onMounted } from 'vue';
-import { formatRuPhone, isCompleteRuPhone, telHref, normalizeEmail, applyPhoneInput, phoneFocus, phoneBlur } from './utils/contactInput.js';
+import { useTransportRequest } from './composables/useTransportRequest.js';
+import { formatRuPhone, telHref, normalizeEmail, applyPhoneInput, phoneFocus, phoneBlur } from './utils/contactInput.js';
 
 const settings = ref({
   primary_phone: '+7 (8422) 71-73-03',
@@ -25,15 +26,10 @@ const brandLogoLight = '/images/put-bez-pregrad/brand-symbol-light.svg';
 const photoVan = '/images/accessible-van.avif';
 const photoPassenger = '/images/accessible-passenger.avif';
 const photoBoarding = '/images/accessible-boarding.avif';
-const departure = ref('');
-const destination = ref('');
-const passenger = ref('');
-const contact = ref('');
-const website = ref('');
-const consent = ref(false);
-const sending = ref(false);
-const requestMessage = ref('');
-const requestError = ref(false);
+const {
+  departure, destination, passenger, contact, website,
+  consent, sending, requestMessage, requestError, challenge, sendRequest,
+} = useTransportRequest();
 const mobileMenuOpen = ref(false);
 const closeMenu = () => { mobileMenuOpen.value = false; };
 const closeMenuOnOutsideClick = (event) => {
@@ -45,6 +41,7 @@ onMounted(async () => {
     const response = await fetch('/api/public.php', { cache: 'no-store' });
     if (!response.ok) return;
     const data = await response.json();
+    if (typeof data?.challenge === 'string') challenge.value = data.challenge;
     if (data && data.settings) settings.value = {
       ...settings.value,
       ...data.settings,
@@ -57,45 +54,7 @@ onMounted(async () => {
   }
 });
 
-async function sendRequest() {
-  if (sending.value || !departure.value.trim() || !destination.value.trim() || !contact.value.trim() || !consent.value) return;
-  if (!isCompleteRuPhone(contact.value)) {
-    requestError.value = true;
-    requestMessage.value = 'Проверьте телефон: нужны 10 цифр после +7';
-    return;
-  }
-  sending.value = true;
-  requestMessage.value = '';
-  requestError.value = false;
-  try {
-    const response = await fetch('/api/submit.php', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        departure: departure.value.trim(),
-        destination: destination.value.trim(),
-        passenger: passenger.value.trim(),
-        contact: contact.value.trim(),
-        website: website.value,
-        consent: consent.value,
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || 'Не удалось отправить заявку');
-    requestMessage.value = data.message || 'Заявка принята к отправке. Мы свяжемся с вами.';
-    departure.value = '';
-    destination.value = '';
-    passenger.value = '';
-    contact.value = '';
-    consent.value = false;
-  } catch (e) {
-    requestError.value = true;
-    requestMessage.value = e instanceof Error && e.message ? e.message : 'Ошибка отправки. Позвоните нам по телефону.';
-  } finally {
-    sending.value = false;
-  }
-}
+
 </script>
 
 
@@ -156,7 +115,7 @@ async function sendRequest() {
         <div class="hero__content container">
           <div class="hero__text">
             <p class="eyebrow">УЛЬЯНОВСК И УЛЬЯНОВСКАЯ ОБЛАСТЬ · 24/7</p>
-            <h1 id="hero-title">Перевозка инвалидов-колясочников <em>в спецавтомобиле</em> по городу и области</h1>
+            <h1 id="hero-title">Перевозка инвалидов-<em>колясочников</em> в спецавтомобиле по городу и области</h1>
             <div class="hero__phone-panel">
               <span class="hero__phone-label">Позвоните и закажите поездку</span>
               <a :href="primaryPhoneHref" class="hero__phone" :aria-label="'Позвонить на номер ' + primaryPhone">

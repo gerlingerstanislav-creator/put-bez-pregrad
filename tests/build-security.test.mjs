@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { finalizeBuild, resolveAdminPath } from '../scripts/finalize-build.mjs';
+
+test('private admin path is validated and never publicly predictable', () => {
+  assert.equal(resolveAdminPath({ PBP_ADMIN_PATH: 'private-admin-test-1234567890' }), 'private-admin-test-1234567890');
+  assert.throws(() => resolveAdminPath({ PBP_ADMIN_PATH: '../admin' }));
+  assert.throws(() => resolveAdminPath({ PBP_ADMIN_PATH: 'admin' }));
+});
+
+test('production packaging relocates admin entry without exposing /admin/', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pbp-dist-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'admin'));
+    fs.writeFileSync(path.join(dir, 'admin', 'index.html'), '<html>ADMIN_INTERNAL_ENTRY</html>');
+    const slug = 'secure-preview-abcdef-123456789';
+    finalizeBuild(dir, { PBP_ADMIN_PATH: slug });
+    assert.match(fs.readFileSync(path.join(dir, slug, 'index.html'), 'utf8'), /ADMIN_INTERNAL_ENTRY/);
+    assert.match(fs.readFileSync(path.join(dir, 'admin', 'index.html'), 'utf8'), /Страница не найдена/);
+    assert.ok(!fs.readFileSync(path.join(dir, 'admin', 'index.html'), 'utf8').includes('ADMIN_INTERNAL_ENTRY'));
+    for (const file of ['admin.php', 'settings.php']) {
+      assert.ok(fs.statSync(path.join(dir, slug, 'api', file)).size > 100);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

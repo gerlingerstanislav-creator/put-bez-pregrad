@@ -22,8 +22,12 @@ jobs:
       - name: Check frontend syntax and tests
         run: npm run check
       - name: Build site
+        env:
+          PBP_ADMIN_PATH: local-admin-preview-only
         run: npm run build
       - name: Verify build and disabled legacy administration
+        env:
+          PBP_ADMIN_PATH: local-admin-preview-only
         run: node scripts/check-dist.mjs
       - uses: shivammathur/setup-php@v2
         with:
@@ -34,7 +38,7 @@ jobs:
           composer install --working-dir=mail-php --no-interaction --no-dev --prefer-dist --optimize-autoloader
           cp -a mail-php/vendor dist/api/vendor
       - name: Lint PHP
-        run: find dist/api dist/portal-*/api -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+        run: find dist -type f -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
       - name: Test SMTP normalization and form protection
         run: |
           php tests/php-email.php

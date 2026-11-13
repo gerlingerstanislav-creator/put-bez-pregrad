@@ -8,7 +8,7 @@ const required = [
   'images/accessible-van.avif','images/accessible-passenger.avif','images/accessible-boarding.avif',
   'images/put-bez-pregrad/favicon.svg','images/put-bez-pregrad/logo.svg','images/put-bez-pregrad/logo-light.svg',
 ];
-const adminPath = process.env.PBP_ADMIN_PATH || 'local-admin-preview';
+const adminPath = process.env.PBP_ADMIN_PATH || 'local-admin-preview-only';
 required.push(`${adminPath}/index.html`, `${adminPath}/api/admin.php`, `${adminPath}/api/settings.php`);
 for(const item of required){
   const p=path.join('dist',item);

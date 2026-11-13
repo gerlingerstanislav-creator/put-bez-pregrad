@@ -1,8 +1,6 @@
 name: Build and deploy to Timeweb
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -14,6 +12,9 @@ concurrency:
 
 jobs:
   deploy:
+    environment: production
+    env:
+      PBP_ADMIN_PATH: ${{ secrets.PBP_ADMIN_PATH }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -21,6 +22,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Verify private administration build setting
+        shell: bash
+        run: |
+          if [[ -z "$PBP_ADMIN_PATH" ]]; then
+            echo '::error::PBP_ADMIN_PATH must be configured in GitHub Secrets.'
+            exit 1
+          fi
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Validate JavaScript
@@ -40,7 +48,7 @@ jobs:
           cp -a mail-php/vendor dist/api/vendor
           test -s dist/api/vendor/autoload.php
       - name: Check PHP syntax
-        run: find dist/api dist/portal-* -type f -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
+        run: find dist -type f -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
       - name: Test anti-spam challenge
         run: php tests/php-spam.php
 
@@ -99,7 +107,7 @@ jobs:
           local-dir: ./dist/
           server-dir: ${{ endsWith(secrets.TIMEWEB_FTP_DIR, '/') && secrets.TIMEWEB_FTP_DIR || format('{0}/', secrets.TIMEWEB_FTP_DIR) }}
           dangerous-clean-slate: false
-          log-level: standard
+          log-level: minimal
 
       - name: Check live API
         run: |
@@ -107,5 +115,6 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/api/admin.php?action=session)" = 404
           test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/api/settings.php)" = 404
           test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/admin/)" = 404
+          curl --fail --silent --show-error --max-time 15 "https://bpreg.tw1.ru/$PBP_ADMIN_PATH/api/admin.php?action=session" | grep -q '"csrf"'
           test "$(curl -s -o /dev/null -w '%{http_code}' http://bpreg.tw1.ru/)" = 308
           echo "HTTPS and retired public administration URLs verified."

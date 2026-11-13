@@ -1,4 +1,5 @@
 import { createApp } from 'vue';
 import './styles.css';
+import { redirectToHttps } from './utils/redirectToHttps.js';
 import App from './App.vue';
-createApp(App).mount('#app');
+if (!redirectToHttps()) createApp(App).mount('#app');

@@ -4,7 +4,7 @@ const required = [
   'index.html','admin/index.html','portal-5i-qy7a79-uGFTtWdc8ZlOyWwVk88qRJ/index.html',
   'api/public.php','api/admin.php','api/submit.php','api/common.php','api/settings.php','api/mailer.php','api/spam.php',
   'portal-5i-qy7a79-uGFTtWdc8ZlOyWwVk88qRJ/api/admin.php','portal-5i-qy7a79-uGFTtWdc8ZlOyWwVk88qRJ/api/settings.php','admin/.htaccess',
-  'api/.htaccess',
+  'api/.htaccess','.htaccess',
   'images/accessible-van.avif','images/accessible-passenger.avif','images/accessible-boarding.avif',
   'images/put-bez-pregrad/favicon.svg','images/put-bez-pregrad/logo.svg','images/put-bez-pregrad/logo-light.svg',
 ];

@@ -22,6 +22,36 @@ function response_json(array $body, int $status = 200): never {
     echo json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
     exit;
 }
+/**
+ * HTTPS is enforced at both Apache and PHP boundaries. Local loopback
+ * requests are exempt only for automated tests and developer tooling.
+ */
+function request_is_https(): bool
+{
+    return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (int) ($_SERVER['SERVER_PORT'] ?? 0) === 443
+        || strtolower(trim(explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''))[0])) === 'https';
+}
+
+function require_https(): void
+{
+    if (request_is_https()) return;
+
+    $host = (string) ($_SERVER['HTTP_HOST'] ?? '');
+    $hostname = strtolower(explode(':', $host)[0]);
+    $isLocal = in_array($hostname, ['localhost', '127.0.0.1'], true)
+        && in_array((string) ($_SERVER['REMOTE_ADDR'] ?? ''), ['127.0.0.1', '::1'], true);
+    if ($isLocal) return;
+
+    if (!preg_match('/^[a-z0-9.-]+(?::[0-9]{1,5})?$/iD', $host)) {
+        response_json(['error' => 'Некорректный хост'], 400);
+    }
+    $uri = (string) ($_SERVER['REQUEST_URI'] ?? '/');
+    if (!str_starts_with($uri, '/') || str_starts_with($uri, '//')) $uri = '/';
+    header('Location: https://' . $host . $uri, true, 308);
+    exit;
+}
+
 function only_method(string $allowed): void {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== $allowed) {
         header('Allow: ' . $allowed);
@@ -131,8 +161,9 @@ function start_admin_session(): void {
     ini_set('session.use_strict_mode', '1');
     ini_set('session.use_only_cookies', '1');
     session_name('pbp_admin');
-    $secure = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
-    session_set_cookie_params(['lifetime' => 0, 'path' => '/api/', 'secure' => $secure, 'httponly' => true, 'samesite' => 'Strict']);
+    // Cookie is sent only to the unlinked administration directory.
+    $adminDir = rtrim(dirname(dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '/api/admin.php'))), '/') . '/';
+    session_set_cookie_params(['lifetime' => 0, 'path' => $adminDir, 'secure' => request_is_https(), 'httponly' => true, 'samesite' => 'Strict']);
     session_start();
     if (!isset($_SESSION['csrf'])) $_SESSION['csrf'] = bin2hex(random_bytes(32));
 }

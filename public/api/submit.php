@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/spam.php';
+require_https();
 only_method('POST');
 same_origin();
 $data = input_json();

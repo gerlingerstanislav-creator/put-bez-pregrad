@@ -1,0 +1,120 @@
+name: Build and deploy to Timeweb
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: timeweb-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment: production
+    env:
+      PBP_ADMIN_PATH: ${{ secrets.PBP_ADMIN_PATH }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify private administration build setting
+        shell: bash
+        run: |
+          if [[ -z "$PBP_ADMIN_PATH" ]]; then
+            echo '::error::PBP_ADMIN_PATH must be configured in GitHub Secrets.'
+            exit 1
+          fi
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate JavaScript
+        run: npm run check
+      - name: Build site
+        run: npm run build
+      - name: Verify build output
+        run: node scripts/check-dist.mjs
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+      - name: Install PHPMailer
+        run: |
+          composer install --working-dir=mail-php --no-interaction --no-dev --prefer-dist --optimize-autoloader
+          cp -a mail-php/vendor dist/api/vendor
+          test -s dist/api/vendor/autoload.php
+      - name: Check PHP syntax
+        run: find dist -type f -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
+      - name: Test anti-spam challenge
+        run: php tests/php-spam.php
+
+      - name: Test international SMTP addresses without intl extension
+        run: |
+          php tests/php-email.php
+          php -n tests/php-email.php
+      - name: Smoke test PHP endpoints
+        shell: bash
+        run: |
+          cp -a dist "$RUNNER_TEMP/pbp-smoke"
+          php -S 127.0.0.1:8087 -t "$RUNNER_TEMP/pbp-smoke" >/tmp/pbp-php-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for try in 1 2 3 4 5; do
+            if curl -fsS http://127.0.0.1:8087/api/public.php -o /tmp/pbp-settings.json; then break; fi
+            sleep 1
+          done
+          grep -q 'primary_phone' /tmp/pbp-settings.json
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/admin.php?action=session)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/settings.php)" = 404
+
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8087/api/submit.php)" = 422
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"departure":"Москва","destination":"Ульяновск","contact":"+7 (999) 123-45-67","consent":true}' http://127.0.0.1:8087/api/submit.php)" = 403
+      - name: Ensure private data is outside web root
+        run: |
+          test ! -d dist/api/private
+          php -r 'require "dist/api/common.php"; $root = realpath("dist"); if (str_starts_with(SITE_STORAGE, $root . DIRECTORY_SEPARATOR)) { fwrite(STDERR, "Storage must be outside web root\\n"); exit(1); }'
+      - name: Verify Timeweb secrets
+        env:
+          FTP_HOST: ${{ secrets.TIMEWEB_FTP_HOST }}
+          FTP_USER: ${{ secrets.TIMEWEB_FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.TIMEWEB_FTP_PASSWORD }}
+          FTP_DIR: ${{ secrets.TIMEWEB_FTP_DIR }}
+        shell: bash
+        run: |
+          for key in FTP_HOST FTP_USER FTP_PASSWORD FTP_DIR; do
+            if [[ -z "${!key}" ]]; then
+              echo "::error::Missing Timeweb secret: $key"
+              exit 1
+            fi
+          done
+          echo "Required secrets configured."
+      - name: Verify production TLS before enabling HTTPS redirects
+        run: |
+          curl --fail --silent --show-error --head --max-time 20 https://bpreg.tw1.ru/ >/dev/null
+
+      - name: Publish over FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.TIMEWEB_FTP_HOST }}
+          username: ${{ secrets.TIMEWEB_FTP_USER }}
+          password: ${{ secrets.TIMEWEB_FTP_PASSWORD }}
+          protocol: ftp
+          port: 21
+          local-dir: ./dist/
+          server-dir: ${{ endsWith(secrets.TIMEWEB_FTP_DIR, '/') && secrets.TIMEWEB_FTP_DIR || format('{0}/', secrets.TIMEWEB_FTP_DIR) }}
+          dangerous-clean-slate: false
+          log-level: minimal
+
+      - name: Check live API
+        run: |
+          curl --fail --silent --show-error --max-time 15 https://bpreg.tw1.ru/api/public.php | grep -q 'primary_phone'
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/api/admin.php?action=session)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/api/settings.php)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/admin/)" = 404
+          curl --fail --silent --show-error --max-time 15 "https://bpreg.tw1.ru/$PBP_ADMIN_PATH/api/admin.php?action=session" | grep -q '"csrf"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://bpreg.tw1.ru/)" = 308
+          echo "HTTPS and retired public administration URLs verified."

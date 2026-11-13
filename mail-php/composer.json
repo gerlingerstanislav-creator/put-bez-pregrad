@@ -1,0 +1,14 @@
+{
+  "require": {
+    "php": ">=8.2",
+    "phpmailer/phpmailer": "^6.10",
+    "symfony/polyfill-intl-idn": "^1.38.1",
+    "symfony/polyfill-mbstring": "^1.38.1"
+  },
+  "config": {
+    "platform": {
+      "php": "8.2.0"
+    }
+  },
+  "autoload": {}
+}

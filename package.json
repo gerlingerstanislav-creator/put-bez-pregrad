@@ -1,0 +1,21 @@
+{
+  "name": "put-bez-pregrad",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/finalize-build.mjs",
+    "preview": "vite preview",
+    "check": "node --check vite.config.js && node --check src/main.js && node --check scripts/check-dist.mjs && node --check scripts/finalize-build.mjs && node --check src/admin.js && node --check src/utils/contactInput.js && node --check src/utils/redirectToHttps.js && node --check src/composables/useTransportRequest.js && node --check src/composables/useSiteContacts.js && node --test tests/contact-input.test.mjs tests/build-security.test.mjs"
+  },
+  "dependencies": {
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0",
+    "@vitejs/plugin-vue": "^6.0.9",
+    "tailwindcss": "^4.0.0",
+    "@tailwindcss/vite": "^4.0.0"
+  }
+}

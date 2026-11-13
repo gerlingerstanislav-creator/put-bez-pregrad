@@ -1,0 +1,83 @@
+name: Validate secure landing change (no deployment)
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install frontend
+        run: npm install --no-audit --no-fund
+      - name: Check frontend syntax and tests
+        run: npm run check
+      - name: Build site
+        env:
+          PBP_ADMIN_PATH: local-admin-preview-only
+        run: npm run build
+      - name: Verify build and disabled legacy administration
+        env:
+          PBP_ADMIN_PATH: local-admin-preview-only
+        run: node scripts/check-dist.mjs
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+      - name: Install SMTP dependencies for offline tests
+        run: |
+          composer install --working-dir=mail-php --no-interaction --no-dev --prefer-dist --optimize-autoloader
+          cp -a mail-php/vendor dist/api/vendor
+      - name: Lint PHP
+        run: find dist -type f -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
+      - name: Test SMTP normalization and form protection
+        run: |
+          php tests/php-email.php
+          php -n tests/php-email.php
+          php tests/php-spam.php
+      - name: Test HTTP endpoints locally without sending email
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -S 127.0.0.1:8087 -t dist >/tmp/pbp-local-php.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for i in 1 2 3 4 5; do
+            if curl -fsS http://127.0.0.1:8087/api/public.php -o /tmp/public.json; then break; fi
+            sleep 1
+          done
+          grep -q '"challenge"' /tmp/public.json
+          challenge="$(jq -r .challenge /tmp/public.json)"
+          test "${#challenge}" -eq 64
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/admin.php?action=session)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/settings.php)" = 404
+          private_api="$(find dist -path '*/api/admin.php' ! -path 'dist/api/admin.php' | head -n 1 | sed 's#^dist##')"
+          test -n "$private_api"
+          curl -fsS "http://127.0.0.1:8087$private_api?action=session" | grep -q '"csrf"'
+          private_settings="${private_api%admin.php}settings.php"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8087$private_settings")" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8087/api/submit.php)" = 422
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"departure":"Москва","destination":"Ульяновск","contact":"+7 (999) 123-45-67","consent":true}' http://127.0.0.1:8087/api/submit.php)" = 403
+          sleep 3
+          payload="$(jq -n --arg challenge "$challenge" '{departure:"Москва",destination:"Ульяновск",contact:"+7 (999) 123-45-67",consent:true,challenge:$challenge}')"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d "$payload" http://127.0.0.1:8087/api/submit.php)" = 503
+          curl -s -D /tmp/http-redirect-headers -o /dev/null -H 'Host: bpreg.tw1.ru' http://127.0.0.1:8087/api/public.php
+          grep -q '308' /tmp/http-redirect-headers
+          grep -qi 'Location: https://bpreg.tw1.ru/api/public.php' /tmp/http-redirect-headers
+      - name: Probe current Timeweb TLS certificate (non-blocking)
+        shell: bash
+        run: |
+          if curl -sSI --max-time 15 https://bpreg.tw1.ru/ -o /dev/null; then
+            echo "TLS certificate chain accepted by GitHub runner"
+          else
+            echo "::warning::Current Timeweb HTTPS could not be verified. Do not deploy HTTP->HTTPS redirects before SSL is enabled."
+          fi

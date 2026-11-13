@@ -12,7 +12,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         site: fileURLToPath(new URL('./index.html', import.meta.url)),
-        admin: fileURLToPath(new URL('./admin/index.html', import.meta.url)),
+        admin: fileURLToPath(new URL('./portal-5i-qy7a79-uGFTtWdc8ZlOyWwVk88qRJ/index.html', import.meta.url)),
       },
     },
   },

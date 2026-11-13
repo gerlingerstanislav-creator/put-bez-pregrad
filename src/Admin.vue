@@ -2,6 +2,11 @@
 import { reactive, ref, onMounted } from 'vue';
 import {formatRuPhone, isCompleteRuPhone, normalizeEmail, applyPhoneInput, phoneFocus, phoneBlur} from './utils/contactInput.js';
 
+// Resolve the private API from the current hidden entry directory.
+const adminApiPath = window.location.pathname.replace(/(?:\/index\.html)?\/?$/, '/') + 'api/';
+const adminEndpoint = (action) => `${adminApiPath}admin.php?action=${encodeURIComponent(action)}`;
+const adminSettingsEndpoint = `${adminApiPath}settings.php`;
+
 const loaded = ref(false);
 const authorized = ref(false);
 const busy = ref(false);
@@ -36,7 +41,7 @@ async function request(url, data) {
   return payload;
 }
 async function readSettings() {
-  const data = await request('/api/settings.php');
+  const data = await request(adminSettingsEndpoint);
   Object.assign(settings, data.settings, {
     primary_phone: formatRuPhone(data.settings.primary_phone),
     secondary_phone: formatRuPhone(data.settings.secondary_phone),
@@ -49,7 +54,7 @@ async function readSettings() {
 }
 onMounted(async () => {
   try {
-    const s = await request('/api/admin.php?action=session');
+    const s = await request(adminEndpoint('session'));
     authorized.value = s.authenticated;
     csrf.value = s.csrf;
     if (authorized.value) await readSettings();
@@ -59,7 +64,7 @@ onMounted(async () => {
 async function login() {
   busy.value = true; error.value = '';
   try {
-    const data = await request('/api/admin.php?action=login', { password: password.value });
+    const data = await request(adminEndpoint('login'), { password: password.value });
     csrf.value = data.csrf;
     password.value = '';
     authorized.value = true;
@@ -79,7 +84,7 @@ async function save() {
   }
   busy.value = true;
   try {
-    await request('/api/admin.php?action=settings', { settings: { ...settings } });
+    await request(adminEndpoint('settings'), { settings: { ...settings } });
     showOk('Контакты сохранены и уже доступны на сайте');
   } catch (e) { showError(e); }
   finally { busy.value = false; }
@@ -92,7 +97,7 @@ async function saveSmtp() {
   }
   busy.value = true;
   try {
-    const result = await request('/api/admin.php?action=smtp', {
+    const result = await request(adminEndpoint('smtp'), {
       host: smtp.host, user: normalizeEmail(smtp.user), password: smtp.password,
     });
     Object.assign(smtp, result.smtp);
@@ -104,7 +109,7 @@ async function saveSmtp() {
 async function testSmtp() {
   busy.value = true;
   try {
-    const data = await request('/api/admin.php?action=test-email', {});
+    const data = await request(adminEndpoint('test-email'), {});
     showOk(data.message || 'Тестовое письмо принято SMTP-сервером. Проверьте почту');
   } catch(e) { showError(e); }
   finally { busy.value = false; }
@@ -114,7 +119,7 @@ async function changePassword() {
   if (changing.next.length < 14) { showError(new Error('Новый пароль должен содержать не менее 14 символов')); return; }
   busy.value = true;
   try {
-    const data = await request('/api/admin.php?action=password', {
+    const data = await request(adminEndpoint('password'), {
       current_password: changing.old,
       new_password: changing.next,
     });
@@ -127,10 +132,10 @@ async function changePassword() {
 async function logout() {
   busy.value = true;
   try {
-    await request('/api/admin.php?action=logout', {});
+    await request(adminEndpoint('logout'), {});
     authorized.value = false;
     csrf.value = '';
-    const data = await request('/api/admin.php?action=session');
+    const data = await request(adminEndpoint('session'));
     csrf.value = data.csrf;
     showOk('Вы вышли');
   } catch (e) { showError(e); }
@@ -147,7 +152,6 @@ async function logout() {
     <div class="admin-content">
       <h1>Администрирование</h1>
       <p class="intro">Настройка контактов и получения заявок</p>
-      <p class="warning" role="note">Пока работает HTTP, пароль и сессия не защищены от перехвата в сети. Включите HTTPS при первой возможности.</p>
       <p v-if="notice" class="notice" role="status">{{ notice }}</p>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
       <div v-if="!loaded">Проверяем сессию…</div>
@@ -193,7 +197,7 @@ async function logout() {
             <input id="smtp-user" v-model.trim="smtp.user" type="text" inputmode="email" autocomplete="username" autocapitalize="off" :spellcheck="false" required maxlength="250" @blur="smtp.user = normalizeEmail(smtp.user)" placeholder="noreply@пример.рф"/>
             <label for="smtp-password">Пароль почтового ящика / пароль приложения</label>
             <input id="smtp-password" v-model="smtp.password" type="password" autocomplete="new-password" :required="!smtp.configured" :placeholder="smtp.configured ? 'Оставьте пустым, чтобы не менять' : 'Введите пароль SMTP'" maxlength="512"/>
-            <p class="hint">Для Яндекса обычно нужен отдельный пароль приложения. SMTP защищён: Timeweb — SSL/TLS, порт 465; Яндекс — STARTTLS, порт 587. Сама админка пока работает по HTTP.</p>
+            <p class="hint">Для Яндекса обычно нужен отдельный пароль приложения. SMTP защищён: Timeweb — SSL/TLS, порт 465; Яндекс — STARTTLS, порт 587. Вход и управление настройками должны выполняться только по HTTPS.</p>
             <button :disabled="busy" type="submit">{{ busy ? 'Сохраняем…' : 'Сохранить SMTP' }}</button>
             <button type="button" class="ghost" :disabled="busy || !smtp.configured" @click="testSmtp">Отправить тестовое письмо на {{ settings.request_email }}</button>
           </form>

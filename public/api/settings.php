@@ -1,8 +1,7 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/common.php';
-start_admin_session();
-require_admin();
-only_method('GET');
-$state = current_state();
-response_json(['settings' => $state['settings'], 'smtp' => smtp_public_status($state), 'csrf' => $_SESSION['csrf']]);
+// Retired public administration endpoint. Never expose session information here.
+http_response_code(404);
+header('Cache-Control: no-store');
+header('X-Content-Type-Options: nosniff');
+exit;

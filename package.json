@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "node --check vite.config.js && node --check src/main.js && node --check scripts/check-dist.mjs && node --check src/admin.js && node --check src/utils/contactInput.js && node --test tests/contact-input.test.mjs"
+    "check": "node --check vite.config.js && node --check src/main.js && node --check scripts/check-dist.mjs && node --check src/admin.js && node --check src/utils/contactInput.js && node --check src/utils/redirectToHttps.js && node --check src/composables/useTransportRequest.js && node --test tests/contact-input.test.mjs"
   },
   "dependencies": {
     "vue": "^3.5.0"

@@ -219,30 +219,4 @@ async function logout() {
   </main>
 </template>
 
-<style scoped>
-.admin{min-height:100vh;background:#f2f6f9;color:#152135;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-.admin *{box-sizing:border-box}
-.admin-top{display:flex;justify-content:space-between;gap:20px;padding:18px max(20px,calc((100vw - 900px)/2));background:#fff;border-bottom:1px solid #dae5ec;font-weight:800}
-.back{color:#087e92;text-decoration:none}
-.admin-content{max-width:900px;padding:28px 20px 70px;margin:auto}
-h1{font-size:clamp(28px,4vw,40px);line-height:1.2;margin:0 0 5px}
-.intro{color:#526275;margin:0 0 22px}
-.panel{background:white;padding:clamp(22px,4vw,36px);border-radius:16px;border:1px solid #dce5eb;margin-top:22px}
-.panel h2{font-size:23px;margin:0 0 15px}
-.panel p{color:#526275}
-.panel p.warning{color:#62420f}.panel p.notice{color:#13653d}.panel .hint{font-size:14px;line-height:1.5}
-.form{display:grid;gap:10px}
-.form label{margin-top:10px;font-weight:750}
-.form input,.form select{width:100%;padding:12px 13px;border:1px solid #9cabbb;border-radius:8px;font-size:17px;min-height:49px;color:#152135;background:#fff}
-.form input:focus-visible,.form select:focus-visible,.admin button:focus-visible{outline:3px solid #087e92;outline-offset:2px}
-.admin button{border:0;border-radius:9px;min-height:48px;padding:10px 18px;cursor:pointer;background:#df1036;color:#fff;font-weight:800;font-size:16px}
-.form button{margin-top:18px}
-.admin button:disabled{opacity:.55;cursor:wait}
-.admin button.ghost{background:#eaf2f6;color:#152135}
-.heading{display:flex;align-items:center;justify-content:space-between;gap:15px}
-.warning,.error,.notice{padding:14px 16px;border-radius:9px;line-height:1.5}
-.warning{background:#fff4de;color:#62420f}
-.error{background:#ffedf0;color:#a30a28}
-.notice{background:#e8f7ef;color:#13653d}
-@media(max-width:600px){.admin-top{padding:15px 20px}.heading{align-items:start}}
-</style>
+<style src="./styles/admin.css" scoped></style>

@@ -17,7 +17,7 @@ if ($action === 'login') {
     if (!throttle('admin-login', 8, 900)) response_json(['error' => 'Слишком много попыток. Повторите позднее'], 429);
     $password = $data['password'] ?? null;
     if (!is_string($password) || strlen($password) > 1024 ||
-        !password_verify($password, current_state()['password_hash'])) {
+        !password_verify($password, (string) (current_state()['password_hash'] ?? ''))) {
         response_json(['error' => 'Неверный пароль'], 401);
     }
     session_regenerate_id(true);

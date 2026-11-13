@@ -2,7 +2,6 @@
 declare(strict_types=1);
 
 define('SITE_STORAGE', dirname(__DIR__, 2) . '/.pbp-private');
-const INITIAL_PASSWORD_HASH = '$2y$12$aUqing2M5ALbON0zX/cM6uA.UciO4PSODn.f1O2az9iB058UR2i8q';
 
 function defaults(): array {
     return [
@@ -93,7 +92,7 @@ function storage_ready(): void {
 function state_file(): string { return SITE_STORAGE . '/state.php'; }
 function read_state_file(): array {
     $file = state_file();
-    if (!is_file($file)) return ['password_hash' => INITIAL_PASSWORD_HASH, 'settings' => defaults()];
+    if (!is_file($file)) return ['settings' => defaults()];
     $raw = file_get_contents($file);
     $prefix = "<?php http_response_code(404); exit; ?>\n";
     if (!is_string($raw) || !str_starts_with($raw, $prefix)) {

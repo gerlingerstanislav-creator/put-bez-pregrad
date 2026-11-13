@@ -1,4 +1,4 @@
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { isCompleteRuPhone } from '../utils/contactInput.js';
 
 /**
@@ -89,6 +89,10 @@ export function useTransportRequest() {
       sending.value = false;
     }
   }
+
+  // Preload proof when the form becomes visible so legitimate visitors
+  // never have to wait for the minimum anti-bot age after pressing Submit.
+  onMounted(() => { renewChallenge().catch(() => {}); });
 
   return {
     departure, destination, passenger, contact, website, consent, challenge,

@@ -19,9 +19,9 @@ async function availablePort() {
 test('real PHP migration updates admin hash but preserves existing SMTP and contacts', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pbp-php-integration-'));
   const slug = 'integration-private-path-1234567890';
-  const site = path.join(dir, 'site');
+  const site = path.join(dir, 'public');
   const api = path.join(site, 'api');
-  const storage = path.join(dir, '.pbp-private');
+  const storage = path.join(dir, 'storage');
   const privateApi = path.join(site, slug, 'api');
   fs.mkdirSync(api, { recursive: true });
   fs.mkdirSync(privateApi, { recursive: true });
@@ -34,7 +34,8 @@ test('real PHP migration updates admin hash but preserves existing SMTP and cont
   const statePath = path.join(storage, 'state.php');
   const prefix = '<?php http_response_code(404); exit; ?>\n';
   fs.writeFileSync(statePath, prefix + JSON.stringify(originalState));
-  fs.copyFileSync('public/api/common.php', path.join(api, 'common.php'));
+  fs.mkdirSync(path.join(dir, 'app', 'api'), { recursive: true });
+  fs.copyFileSync('public/api/common.php', path.join(dir, 'app', 'api', 'common.php'));
   const githubEnv = path.join(dir, 'github-env');
   const { filename, token } = prepareAdminBootstrap(site, {
     PBP_ADMIN_PATH: slug, GITHUB_ENV: githubEnv,
@@ -65,6 +66,47 @@ test('real PHP migration updates admin hash but preserves existing SMTP and cont
     assert.deepEqual(state.settings, originalState.settings);
     assert.deepEqual(state.smtp, originalState.smtp);
     assert.match(state.auth_generation, /^[0-9a-f]{32}$/);
+  } finally {
+    child.kill();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
+test('fresh installation bootstrap creates state in storage/, never under public/', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pbp-fresh-install-'));
+  const web = path.join(dir, 'public');
+  const slug = 'integration-fresh-admin-123456789';
+  fs.mkdirSync(path.join(web, slug, 'api'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'app', 'api'), { recursive: true });
+  fs.copyFileSync('public/api/common.php', path.join(dir, 'app', 'api', 'common.php'));
+  const { token, filename } = prepareAdminBootstrap(web, {
+    PBP_ADMIN_PATH: slug, GITHUB_ENV: path.join(dir, 'github-env'),
+  });
+  const hash = execFileSync('php', ['-r',
+    'echo password_hash("synthetic fresh password", PASSWORD_BCRYPT, ["cost" => 12]);',
+  ], { encoding: 'utf8' }).trim();
+  const port = await availablePort();
+  const child = spawn('php', ['-S', '127.0.0.1:' + port, '-t', web], { stdio: 'ignore' });
+  try {
+    let ready = false;
+    const url = 'http://127.0.0.1:' + port + '/' + slug + '/api/' + filename;
+    for (let i = 0; i < 35; i += 1) {
+      try { await fetch(url); ready = true; break; } catch { await delay(100); }
+    }
+    assert.ok(ready);
+    const result = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password_hash: hash }),
+    });
+    assert.equal(result.status, 200);
+    const prefix = '<?php http_response_code(404); exit; ?>\n';
+    const state = JSON.parse(fs.readFileSync(path.join(dir, 'storage', 'state.php'), 'utf8').slice(prefix.length));
+    assert.equal(state.password_hash, hash);
+    assert.equal(state.settings.primary_phone, '+7 (8422) 71-73-03');
+    assert.equal(state.smtp, undefined);
+    assert.equal(fs.existsSync(path.join(web, 'storage')), false);
   } finally {
     child.kill();
     fs.rmSync(dir, { recursive: true, force: true });

@@ -36,11 +36,13 @@ jobs:
       - name: Install SMTP dependencies for offline tests
         run: |
           composer install --working-dir=mail-php --no-interaction --no-dev --prefer-dist --optimize-autoloader
-          cp -a mail-php/vendor dist/api/vendor
+          cp -a mail-php/vendor site-dist/app/api/vendor
       - name: Lint PHP
         run: |
-          find dist -type f -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
+          find site-dist -type f -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
           php -l server/admin-bootstrap.php
+      - name: Check safe activation shell syntax
+        run: bash -n scripts/timeweb-activate.sh
       - name: Test password rotation through PHP without touching real SMTP
         run: node --test tests/php-bootstrap.test.mjs
       - name: Test Timeweb reverse proxy HTTPS signals
@@ -54,7 +56,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          php -S 127.0.0.1:8087 -t dist >/tmp/pbp-local-php.log 2>&1 &
+          php -S 127.0.0.1:8087 -t site-dist/public >/tmp/pbp-local-php.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           for i in 1 2 3 4 5; do
@@ -66,7 +68,7 @@ jobs:
           test "${#challenge}" -eq 64
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/admin.php?action=session)" = 404
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/settings.php)" = 404
-          private_api="$(find dist -path '*/api/admin.php' ! -path 'dist/api/admin.php' | head -n 1 | sed 's#^dist##')"
+          private_api="$(find site-dist/public -path '*/api/admin.php' ! -path 'site-dist/public/api/admin.php' | head -n 1 | sed 's#^site-dist/public##')"
           test -n "$private_api"
           curl -fsS "http://127.0.0.1:8087$private_api?action=session" | grep -q '"csrf"'
           private_settings="${private_api%admin.php}settings.php"

@@ -43,6 +43,8 @@ jobs:
         run: |
           find dist -type f -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
           php -l server/admin-bootstrap.php
+      - name: Test password rotation through PHP without touching real SMTP
+        run: node --test tests/php-bootstrap.test.mjs
       - name: Test SMTP normalization and form protection
         run: |
           php tests/php-email.php

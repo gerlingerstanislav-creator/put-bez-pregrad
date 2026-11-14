@@ -28,8 +28,8 @@ if (!is_string($hash) ||
     response_json(['error' => 'Invalid password hash'], 422);
 }
 
-// For a fresh installation the authenticated, short-lived migration initializes
-// the password and default contacts. Existing SMTP and contacts are preserved.
+// Never erase the live SMTP configuration if the hosting storage is missing.
+if (!is_file(state_file())) response_json(['error' => 'Server state missing'], 503);
 
 // Preserves SMTP credentials, contacts and any unrelated server-side state.
 update_state(static function (array $state) use ($hash): array {

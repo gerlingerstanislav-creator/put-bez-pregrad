@@ -13,19 +13,15 @@ export function resolveAdminPath(env = process.env) {
   return slug;
 }
 
-export function finalizeBuild(dir = 'dist', env = process.env, privateOutput = dir === 'dist' ? 'private-dist' : dir + '-private') {
+export function finalizeBuild(dir = 'dist', env = process.env) {
   const slug = resolveAdminPath(env);
   const privateRoot = path.join(dir, slug);
   fs.mkdirSync(path.join(privateRoot, 'api'), { recursive: true });
 
   // Vite emits the admin entry under /admin/; move it before deployment.
   fs.renameSync(path.join(dir, 'admin', 'index.html'), path.join(privateRoot, 'index.html'));
-  // Public URLs are tiny entrypoints. Real admin handlers are deployed outside webroot.
-  fs.mkdirSync(path.join(privateOutput, 'admin-api'), { recursive: true });
   for (const name of ['admin.php', 'settings.php']) {
-    fs.copyFileSync(path.join('server', 'admin-api', name), path.join(privateOutput, 'admin-api', name));
-    const gateway = '<?php\\ndeclare(strict_types=1);\\nrequire_once dirname(__DIR__, 3) . \'/private/admin-api/' + name + '\';\\n';
-    fs.writeFileSync(path.join(privateRoot, 'api', name), gateway.replaceAll('\\n', '\n'));
+    fs.copyFileSync(path.join('server', 'admin-api', name), path.join(privateRoot, 'api', name));
   }
 
   // PHP returns an actual 404 for /admin/, including when the web server

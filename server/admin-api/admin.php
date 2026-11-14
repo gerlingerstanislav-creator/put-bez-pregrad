@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/../../web/api/common.php';
+require_once __DIR__ . '/../../api/common.php';
 require_https();
 start_admin_session();
 header('Cache-Control: no-store');

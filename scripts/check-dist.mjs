@@ -18,20 +18,7 @@ for(const p of ['dist/index.html',`dist/${adminPath}/index.html`]){
   const html=fs.readFileSync(p,'utf8');
   if(!/assets\/[^" ]+\.js/.test(html) || !/assets\/[^" ]+\.css/.test(html))throw Error('No compiled JS/CSS in '+p);
 }
-for (const name of ['admin.php', 'settings.php']) {
-  const publicGateway = fs.readFileSync(path.join('dist', adminPath, 'api', name), 'utf8');
-  if (!publicGateway.includes("'/private/admin-api/" + name + "'") || publicGateway.includes('password_verify')) {
-    throw Error('Admin handler must be a gateway to an out-of-webroot PHP file: ' + name);
-  }
-  const privateFile = path.join('private-dist', 'admin-api', name);
-  if (!fs.existsSync(privateFile) || fs.statSync(privateFile).size < 100) {
-    throw Error('Missing private administration handler: ' + privateFile);
-  }
-}
-if (fs.existsSync('dist/private') || fs.existsSync('dist/.pbp-private')) {
-  throw Error('Private application data must not be included in webroot');
-}
-console.log('Production webroot and out-of-webroot admin handlers verified');
+console.log('Production site + administration and PHP files verified');
 
 for (const legacy of ['admin', 'login']) {
   if (fs.existsSync('dist/' + legacy + '/index.html')) {

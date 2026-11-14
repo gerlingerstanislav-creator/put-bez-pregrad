@@ -29,6 +29,9 @@ jobs:
           echo "Landing HTTPS root: HTTP $page_status"
           public_api="$(curl --silent --show-error -o /tmp/pbp-public.json -w '%{http_code}' --max-time 15 https://bpreg.tw1.ru/api/public.php)"
           echo "Public JSON API: HTTP $public_api"
+          if [[ "$public_api" != 200 ]]; then
+            python3 -c 'import json; d=json.load(open("/tmp/pbp-public.json")); print("Public API error category:", str(d.get("error", "unknown"))[:160])'
+          fi
           if [[ "$public_api" == 200 ]]; then grep -q 'primary_phone' /tmp/pbp-public.json; fi
           for route in /admin/ /login/ /api/admin.php /api/settings.php; do
             status="$(curl --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 "https://bpreg.tw1.ru$route")"

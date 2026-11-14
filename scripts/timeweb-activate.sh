@@ -33,12 +33,12 @@ fi
 
 # PHP must prove write access as the LIVE web process, not only as the SSH user.
 token="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
-probe_filename=".pbp-check-$token.php"
+probe_filename="pbp-check-$token.php"
 probe="$docroot/$probe_filename"
 cat > "$probe" <<PHP
 <?php
 declare(strict_types=1);
-if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' ||
+if ((\$_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' ||
     !hash_equals('$token', (string) (\$_POST['token'] ?? ''))) {
     http_response_code(404); exit;
 }
@@ -77,4 +77,5 @@ if ! curl -fsS --max-time 20 https://bpreg.tw1.ru/api/public.php | grep -q '"pri
   exit 1
 fi
 printf '%s\n' "$backup" > "$site/.previous-public-html"
+printf 'pbp-isolated-live-v1\n' > "$site/.pbp-live-root"
 echo 'New site activated. Old public_html is retained for rollback.'

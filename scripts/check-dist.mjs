@@ -4,7 +4,7 @@ const required = [
   'index.html','admin/index.php','login/index.php',
   'api/public.php','api/admin.php','api/submit.php','api/common.php','api/settings.php','api/mailer.php','api/spam.php',
   'admin/.htaccess',
-  'api/.htaccess','.htaccess',
+  'api/.htaccess','.htaccess','.pbp-private/.htaccess','.pbp-private/index.php',
   'images/accessible-van.avif','images/accessible-passenger.avif','images/accessible-boarding.avif',
   'images/put-bez-pregrad/favicon.svg','images/put-bez-pregrad/logo.svg','images/put-bez-pregrad/logo-light.svg',
 ];

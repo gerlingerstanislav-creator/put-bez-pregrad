@@ -65,6 +65,9 @@ test('real PHP migration updates admin hash but preserves existing SMTP and cont
     assert.deepEqual(state.settings, originalState.settings);
     assert.deepEqual(state.smtp, originalState.smtp);
     assert.match(state.auth_generation, /^[0-9a-f]{32}$/);
+    const direct = await fetch('http://127.0.0.1:' + port + '/.pbp-private/state.php');
+    assert.equal(direct.status, 404, 'The stored admin hash and SMTP password must not be returned over HTTP');
+    assert.ok(!(await direct.text()).includes('synthetic-not-a-secret'));
   } finally {
     child.kill();
     fs.rmSync(dir, { recursive: true, force: true });

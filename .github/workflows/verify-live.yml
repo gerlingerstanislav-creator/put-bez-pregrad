@@ -1,0 +1,57 @@
+name: Diagnose deployed site over HTTPS (read only)
+
+on:
+  push:
+    branches: [release-preflight]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 5
+    env:
+      PBP_ADMIN_PATH: ${{ secrets.PBP_ADMIN_PATH }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check deployed routes without leaking private address
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PBP_ADMIN_PATH"
+          echo "::add-mask::$PBP_ADMIN_PATH"
+          public_api="$(curl --silent --show-error -o /tmp/pbp-public.json -w '%{http_code}' --max-time 15 https://bpreg.tw1.ru/api/public.php)"
+          echo "Public JSON API: HTTP $public_api"
+          if [[ "$public_api" == 200 ]]; then grep -q 'primary_phone' /tmp/pbp-public.json; fi
+          for route in /admin/ /login/ /api/admin.php /api/settings.php; do
+            status="$(curl --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 "https://bpreg.tw1.ru$route")"
+            echo "Legacy route $route: HTTP $status"
+          done
+          for route in "/$PBP_ADMIN_PATH/" "/$PBP_ADMIN_PATH/index.html" "/$PBP_ADMIN_PATH/api/admin.php?action=session"; do
+            status="$(curl --silent --show-error -o /tmp/pbp-private.json -w '%{http_code}' --max-time 15 "https://bpreg.tw1.ru$route")"
+            echo "Private route: HTTP $status"
+            if [[ "$route" == *"admin.php"* ]]; then
+              if grep -q '"csrf"' /tmp/pbp-private.json; then echo "Admin API JSON: csrf present"; else echo "Admin API JSON: csrf missing"; fi
+            fi
+          done
+          status="$(curl --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 http://bpreg.tw1.ru/)"
+          echo "HTTP root redirect: HTTP $status"
+      - name: Compare Node HTTPS transport without exposing the URL
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          const paths=['/api/public.php','/'+process.env.PBP_ADMIN_PATH+'/api/admin.php?action=session'];
+          for (let i=0;i<paths.length;i++) {
+            try {
+              const r=await fetch('https://bpreg.tw1.ru'+paths[i],{redirect:'manual',signal:AbortSignal.timeout(15000)});
+              console.log(i===0?'Node public':'Node private',r.status);
+            } catch(e) {
+              console.log(i===0?'Node public':'Node private','transport failure',e.cause?.code||e.name);
+            }
+          }
+          NODE

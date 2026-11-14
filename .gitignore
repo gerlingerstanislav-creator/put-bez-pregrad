@@ -7,3 +7,7 @@ dist/
 
 # Runtime configuration stays outside document root
 .pbp-private/
+
+# Production package; storage/ is never part of a release
+site-dist/
+storage/

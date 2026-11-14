@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require_once dirname(__DIR__) . '/dist/api/spam.php';
+require_once dirname(__DIR__) . '/site-dist/app/api/spam.php';
 
 $challenge = issue_form_challenge();
 if (strlen($challenge) !== 64 || form_challenge_is_valid($challenge)) {

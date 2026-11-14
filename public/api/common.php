@@ -1,7 +1,8 @@
 <?php
 declare(strict_types=1);
 
-define('SITE_STORAGE', dirname(__DIR__, 2) . '/.pbp-private');
+// __DIR__ is <site>/app/api, never the HTTP document root.
+define('SITE_STORAGE', dirname(__DIR__, 2) . '/storage');
 
 function defaults(): array {
     return [
@@ -87,7 +88,7 @@ function input_json(): array {
     return $data;
 }
 function storage_ready(): void {
-    if (!is_dir(SITE_STORAGE) && !mkdir(SITE_STORAGE, 0700, true) && !is_dir(SITE_STORAGE)) {
+    if (is_link(SITE_STORAGE) || (!is_dir(SITE_STORAGE) && !@mkdir(SITE_STORAGE, 0700, true) && !is_dir(SITE_STORAGE))) {
         response_json(['error' => 'Хранилище недоступно'], 503);
     }
 }

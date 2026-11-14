@@ -57,6 +57,9 @@ export function finalizeBuild(dir = 'dist', env = process.env, output = 'site-di
     fs.writeFileSync(path.join(publicRoot, slug, 'api', filename),
       gateway({ depth: 3, file: 'admin-api/' + filename }));
   }
+  fs.mkdirSync(path.join(output, 'tools'), { recursive: true });
+  fs.copyFileSync(path.join('scripts', 'timeweb-activate.sh'),
+    path.join(output, 'tools', 'activate.sh'));
   // Existing legacy URLs still return 404; no symlinks back into app/.
   if (!fs.existsSync(path.join(publicRoot, 'admin', 'index.php'))) {
     throw new Error('Missing old admin 404 stub');

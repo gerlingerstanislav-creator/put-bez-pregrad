@@ -25,7 +25,7 @@ cat > "$probe" <<PHP
 declare(strict_types=1);
 header('Content-Type: text/plain');
 header('Cache-Control: no-store');
-if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'
+if ((\$_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'
     || !hash_equals('$nonce', (string) (\$_POST['token'] ?? ''))) {
     http_response_code(404); exit;
 }

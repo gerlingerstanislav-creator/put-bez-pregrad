@@ -34,12 +34,17 @@ jobs:
           [[ "$TIMEWEB_SSH_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]
           [[ "$TIMEWEB_SSH_USER" =~ ^[a-zA-Z0-9._-]+$ ]]
           [[ "$TIMEWEB_SITE_ROOT" =~ ^/[a-zA-Z0-9._/-]+$ && "$TIMEWEB_SITE_ROOT" != "/" ]]
-          [[ -z "$TIMEWEB_SSH_PORT" || "$TIMEWEB_SSH_PORT" =~ ^[0-9]{2,5}$ ]]
+          [[ "$TIMEWEB_SSH_PORT" =~ ^[0-9]{2,5}$ ]]
           [[ -n "$SSH_PRIVATE_KEY" && -n "$SSH_KNOWN_HOSTS" ]]
           echo 'SSH configuration is present.'
         env:
           SSH_PRIVATE_KEY: ${{ secrets.TIMEWEB_SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.TIMEWEB_SSH_KNOWN_HOSTS }}
+
+      - name: Validate password hash before touching the live site
+        env:
+          PBP_ADMIN_PASSWORD_HASH: ${{ secrets.PBP_ADMIN_PASSWORD_HASH }}
+        run: node --input-type=module -e 'import {validateBootstrapHash} from "./scripts/apply-admin-bootstrap.mjs"; validateBootstrapHash(process.env.PBP_ADMIN_PASSWORD_HASH);'
 
       - name: Install, validate and build
         run: |

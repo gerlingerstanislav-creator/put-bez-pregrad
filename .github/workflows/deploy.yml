@@ -1,11 +1,7 @@
-name: Build and deploy to Timeweb
+name: Deploy isolated webroot to Timeweb
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/production-release-intent-20261114.txt
 
 permissions:
   contents: read
@@ -17,162 +13,147 @@ concurrency:
 jobs:
   deploy:
     environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     env:
       PBP_ADMIN_PATH: ${{ secrets.PBP_ADMIN_PATH }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
+      TIMEWEB_SSH_HOST: ${{ secrets.TIMEWEB_SSH_HOST }}
+      TIMEWEB_SSH_PORT: ${{ secrets.TIMEWEB_SSH_PORT }}
+      TIMEWEB_SSH_USER: ${{ secrets.TIMEWEB_SSH_USER }}
+      TIMEWEB_SITE_ROOT: ${{ secrets.TIMEWEB_SITE_ROOT }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Verify and hide private administration path
+      - name: Verify SSH migration configuration
         shell: bash
         run: |
-          if [[ -z "$PBP_ADMIN_PATH" ]]; then
-            echo '::error::PBP_ADMIN_PATH must be configured in GitHub Secrets.'
-            exit 1
-          fi
-          echo "::add-mask::$PBP_ADMIN_PATH"
-      - name: Validate new admin password hash
+          set -euo pipefail
+          [[ -n "$PBP_ADMIN_PATH" && -n "$TIMEWEB_SSH_HOST" && -n "$TIMEWEB_SSH_USER" && -n "$TIMEWEB_SITE_ROOT" ]]
+          [[ "$TIMEWEB_SSH_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]
+          [[ "$TIMEWEB_SSH_USER" =~ ^[a-zA-Z0-9._-]+$ ]]
+          [[ "$TIMEWEB_SITE_ROOT" =~ ^/[a-zA-Z0-9._/-]+$ && "$TIMEWEB_SITE_ROOT" != "/" ]]
+          [[ -z "$TIMEWEB_SSH_PORT" || "$TIMEWEB_SSH_PORT" =~ ^[0-9]{2,5}$ ]]
+          [[ -n "$SSH_PRIVATE_KEY" && -n "$SSH_KNOWN_HOSTS" ]]
+          echo 'SSH configuration is present.'
         env:
-          PBP_ADMIN_PASSWORD_HASH: ${{ secrets.PBP_ADMIN_PASSWORD_HASH }}
-        run: node --input-type=module -e 'import {validateBootstrapHash} from "./scripts/apply-admin-bootstrap.mjs"; validateBootstrapHash(process.env.PBP_ADMIN_PASSWORD_HASH);'
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-      - name: Validate JavaScript
-        run: npm run check
-      - name: Build site
-        run: npm run build
-      - name: Verify build output
-        run: node scripts/check-dist.mjs
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+          SSH_PRIVATE_KEY: ${{ secrets.TIMEWEB_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.TIMEWEB_SSH_KNOWN_HOSTS }}
+
+      - name: Install, validate and build
+        run: |
+          npm install --no-audit --no-fund
+          npm run check
+          npm run build
+          node scripts/check-dist.mjs
+          bash -n scripts/timeweb-prepare.sh scripts/timeweb-cutover.sh scripts/timeweb-rollback.sh scripts/timeweb-finish.sh
+
+      - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
           coverage: none
-      - name: Install PHPMailer
+      - name: Install SMTP dependencies and verify PHP
         run: |
           composer install --working-dir=mail-php --no-interaction --no-dev --prefer-dist --optimize-autoloader
           cp -a mail-php/vendor dist/api/vendor
-          test -s dist/api/vendor/autoload.php
-      - name: Check PHP syntax
-        run: find dist -type f -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
-      - name: Test anti-spam challenge
-        run: php tests/php-spam.php
-
-      - name: Test international SMTP addresses without intl extension
-        run: |
+          find dist private-dist -type f -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
+          php tests/php-spam.php
           php tests/php-email.php
           php -n tests/php-email.php
-      - name: Smoke test PHP endpoints
-        shell: bash
-        run: |
-          cp -a dist "$RUNNER_TEMP/pbp-smoke"
-          php -S 127.0.0.1:8087 -t "$RUNNER_TEMP/pbp-smoke" >/tmp/pbp-php-server.log 2>&1 &
-          server_pid=$!
-          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
-          for try in 1 2 3 4 5; do
-            if curl -fsS http://127.0.0.1:8087/api/public.php -o /tmp/pbp-settings.json; then break; fi
-            sleep 1
-          done
-          grep -q 'primary_phone' /tmp/pbp-settings.json
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/admin.php?action=session)" = 404
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/settings.php)" = 404
+          node --test tests/php-bootstrap.test.mjs
 
-          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8087/api/submit.php)" = 422
-          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"departure":"Москва","destination":"Ульяновск","contact":"+7 (999) 123-45-67","consent":true}' http://127.0.0.1:8087/api/submit.php)" = 403
-      - name: Ensure private data is outside web root
-        run: |
-          test ! -d dist/api/private
-          php -r 'require "dist/api/common.php"; $root = realpath("dist"); if (str_starts_with(SITE_STORAGE, $root . DIRECTORY_SEPARATOR)) { fwrite(STDERR, "Storage must be outside web root\\n"); exit(1); }'
-      - name: Verify Timeweb secrets
+      - name: Verify live TLS
+        run: curl -fsSI --max-time 20 https://bpreg.tw1.ru/ >/dev/null
+
+      - name: Configure verified SSH access
+        shell: bash
         env:
-          FTP_HOST: ${{ secrets.TIMEWEB_FTP_HOST }}
-          FTP_USER: ${{ secrets.TIMEWEB_FTP_USER }}
-          FTP_PASSWORD: ${{ secrets.TIMEWEB_FTP_PASSWORD }}
-          FTP_DIR: ${{ secrets.TIMEWEB_FTP_DIR }}
-        shell: bash
+          SSH_PRIVATE_KEY: ${{ secrets.TIMEWEB_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.TIMEWEB_SSH_KNOWN_HOSTS }}
         run: |
-          for key in FTP_HOST FTP_USER FTP_PASSWORD FTP_DIR; do
-            if [[ -z "${!key}" ]]; then
-              echo "::error::Missing Timeweb secret: $key"
-              exit 1
-            fi
-          done
-          echo "Required secrets configured."
-      - name: Verify production TLS before enabling HTTPS redirects
-        run: |
-          curl --fail --silent --show-error --head --max-time 20 https://bpreg.tw1.ru/ >/dev/null
+          set -euo pipefail
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i "$HOME/.ssh/id_ed25519" -p "${{ secrets.TIMEWEB_SSH_PORT }}" "$TIMEWEB_SSH_USER@$TIMEWEB_SSH_HOST" 'printf "SSH authenticated\n"'
 
-      - name: Prepare one-time password migration
+      - name: Prepare expiring admin initialization
         id: bootstrap
         run: node scripts/create-admin-bootstrap.mjs
 
-      - name: Publish over FTP
-        id: publish
-        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
-        with:
-          server: ${{ secrets.TIMEWEB_FTP_HOST }}
-          username: ${{ secrets.TIMEWEB_FTP_USER }}
-          password: ${{ secrets.TIMEWEB_FTP_PASSWORD }}
-          protocol: ftp
-          port: 21
-          local-dir: ./dist/
-          server-dir: ${{ endsWith(secrets.TIMEWEB_FTP_DIR, '/') && secrets.TIMEWEB_FTP_DIR || format('{0}/', secrets.TIMEWEB_FTP_DIR) }}
-          dangerous-clean-slate: false
-          log-level: minimal
+      - name: Create isolated server folders and copy any legacy state
+        shell: bash
+        run: |
+          set -euo pipefail
+          root_b64="$(printf '%s' "$TIMEWEB_SITE_ROOT" | base64 -w0)"
+          ssh -o BatchMode=yes -i "$HOME/.ssh/id_ed25519" -p "$TIMEWEB_SSH_PORT" "$TIMEWEB_SSH_USER@$TIMEWEB_SSH_HOST" "SITE_ROOT_B64='$root_b64' bash -se" < scripts/timeweb-prepare.sh
 
-      - name: Apply new password hash to protected Timeweb storage
+      - name: Upload web and private PHP independently
+        id: upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          remote="$TIMEWEB_SSH_USER@$TIMEWEB_SSH_HOST"
+          ssh_command="ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -i $HOME/.ssh/id_ed25519 -p $TIMEWEB_SSH_PORT"
+          rsync -az --delete -e "$ssh_command" dist/ "$remote:$TIMEWEB_SITE_ROOT/web/"
+          rsync -az --delete -e "$ssh_command" private-dist/admin-api/ "$remote:$TIMEWEB_SITE_ROOT/private/admin-api/"
+
+      - name: Verify PHP storage and switch public_html to web
+        id: cutover
+        shell: bash
+        run: |
+          set -euo pipefail
+          root_b64="$(printf '%s' "$TIMEWEB_SITE_ROOT" | base64 -w0)"
+          ssh -o BatchMode=yes -i "$HOME/.ssh/id_ed25519" -p "$TIMEWEB_SSH_PORT" "$TIMEWEB_SSH_USER@$TIMEWEB_SSH_HOST" "SITE_ROOT_B64='$root_b64' bash -se" < scripts/timeweb-cutover.sh
+
+      - name: Initialize or rotate admin password without replacing SMTP
         id: rotate_password
         env:
           PBP_ADMIN_PASSWORD_HASH: ${{ secrets.PBP_ADMIN_PASSWORD_HASH }}
         run: node scripts/apply-admin-bootstrap.mjs
 
-      - name: Remove temporary bootstrap from local build
-        if: always() && steps.bootstrap.outcome == 'success'
+      - name: Delete temporary bootstrap from private admin URL
+        if: always() && steps.bootstrap.outcome == 'success' && steps.upload.outcome != 'skipped'
         shell: bash
         run: |
-          if [[ -n "${PBP_BOOTSTRAP_FILENAME:-}" ]]; then
-            rm -f "dist/$PBP_ADMIN_PATH/api/$PBP_BOOTSTRAP_FILENAME"
-          fi
+          set -euo pipefail
+          [[ "$PBP_BOOTSTRAP_FILENAME" =~ ^setup-[0-9a-f]{48}\.php$ ]]
+          root_b64="$(printf '%s' "$TIMEWEB_SITE_ROOT" | base64 -w0)"
+          file_b64="$(printf '%s' "$PBP_ADMIN_PATH/api/$PBP_BOOTSTRAP_FILENAME" | base64 -w0)"
+          ssh -o BatchMode=yes -i "$HOME/.ssh/id_ed25519" -p "$TIMEWEB_SSH_PORT" "$TIMEWEB_SSH_USER@$TIMEWEB_SSH_HOST" "ROOT_B64='$root_b64' FILE_B64='$file_b64' bash -se" <<'REMOTE'
+          set -euo pipefail
+          root="$(printf '%s' "$ROOT_B64" | base64 -d)"
+          relative="$(printf '%s' "$FILE_B64" | base64 -d)"
+          [[ "$relative" =~ ^[a-zA-Z0-9-]{20,80}/api/setup-[a-f0-9]{48}\.php$ ]]
+          rm -f "$root/web/$relative"
+          REMOTE
 
-      - name: Remove temporary bootstrap from Timeweb
-        if: always() && steps.bootstrap.outcome == 'success' && steps.publish.outcome != 'skipped'
-        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
-        with:
-          server: ${{ secrets.TIMEWEB_FTP_HOST }}
-          username: ${{ secrets.TIMEWEB_FTP_USER }}
-          password: ${{ secrets.TIMEWEB_FTP_PASSWORD }}
-          protocol: ftp
-          port: 21
-          local-dir: ./dist/
-          server-dir: ${{ endsWith(secrets.TIMEWEB_FTP_DIR, '/') && secrets.TIMEWEB_FTP_DIR || format('{0}/', secrets.TIMEWEB_FTP_DIR) }}
-          dangerous-clean-slate: false
-          log-level: minimal
-
-      - name: Verify temporary admin migration was deleted
-        if: steps.rotate_password.outcome == 'success'
+      - name: Verify published website, administration and private file isolation
+        id: verify
         shell: bash
         run: |
-          status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://bpreg.tw1.ru/$PBP_ADMIN_PATH/api/$PBP_BOOTSTRAP_FILENAME")"
-          if [[ "$status" != "404" ]]; then
-            echo "::error::Temporary migration endpoint was not removed (HTTP $status)"
-            exit 1
-          fi
-
-      - name: Check live API
-        run: |
-          curl --fail --silent --show-error --max-time 15 https://bpreg.tw1.ru/api/public.php | grep -q 'primary_phone'
-          test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/api/admin.php?action=session)" = 404
-          test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/api/settings.php)" = 404
+          set -euo pipefail
+          curl -fsS --max-time 20 https://bpreg.tw1.ru/api/public.php | grep -q '"primary_phone"'
+          curl -fsS --max-time 20 "https://bpreg.tw1.ru/$PBP_ADMIN_PATH/api/admin.php?action=session" | grep -q '"csrf"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/private/state.php)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/private/admin-api/admin.php)" = 404
           test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/admin/)" = 404
-          test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/login/)" = 404
-          curl --fail --silent --show-error --max-time 15 "https://bpreg.tw1.ru/$PBP_ADMIN_PATH/api/admin.php?action=session" | grep -q '"csrf"'
-          redirect_status="$(curl -sS -D /tmp/pbp-http-redirect -o /dev/null -w '%{http_code}' --max-time 15 http://bpreg.tw1.ru/)"
-          if [[ "$redirect_status" != 301 && "$redirect_status" != 308 ]]; then
-            echo "::error::Expected HTTP to HTTPS redirect, got HTTP $redirect_status"
-            exit 1
-          fi
-          grep -qi '^location: https://bpreg.tw1.ru' /tmp/pbp-http-redirect
-          echo "HTTPS and retired public administration URLs verified."
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/api/admin.php?action=session)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' "https://bpreg.tw1.ru/$PBP_ADMIN_PATH/api/$PBP_BOOTSTRAP_FILENAME")" = 404
+
+      - name: Confirm new layout and retain original backup
+        if: success()
+        shell: bash
+        run: |
+          root_b64="$(printf '%s' "$TIMEWEB_SITE_ROOT" | base64 -w0)"
+          ssh -o BatchMode=yes -i "$HOME/.ssh/id_ed25519" -p "$TIMEWEB_SSH_PORT" "$TIMEWEB_SSH_USER@$TIMEWEB_SSH_HOST" "SITE_ROOT_B64='$root_b64' bash -se" < scripts/timeweb-finish.sh
+
+      - name: Restore previous document root if first cutover failed
+        if: failure() && steps.cutover.outcome == 'success'
+        shell: bash
+        run: |
+          root_b64="$(printf '%s' "$TIMEWEB_SITE_ROOT" | base64 -w0)"
+          ssh -o BatchMode=yes -i "$HOME/.ssh/id_ed25519" -p "$TIMEWEB_SSH_PORT" "$TIMEWEB_SSH_USER@$TIMEWEB_SSH_HOST" "SITE_ROOT_B64='$root_b64' bash -se" < scripts/timeweb-rollback.sh

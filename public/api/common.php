@@ -30,7 +30,9 @@ function request_is_https(): bool
     // Do not trust a client-supplied X-Forwarded-Proto header: it can
     // bypass transport protection if the reverse proxy does not overwrite it.
     return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-        || (int) ($_SERVER['SERVER_PORT'] ?? 0) === 443;
+        || (int) ($_SERVER['SERVER_PORT'] ?? 0) === 443
+        // Timeweb uses the provider-controlled X-HTTPS header after TLS termination.
+        || (string) ($_SERVER['HTTP_X_HTTPS'] ?? '') === '1';
 }
 
 function require_https(): void

@@ -1,2 +1,1 @@
-Approved production release of reviewed landing, anti-spam, HTTPS and secured admin on 2026-11-14.
-One-off trigger; future releases must use workflow_dispatch.
+2026-11-14: approved retry for Timeweb X-HTTPS reverse-proxy hotfix and admin-password migration.

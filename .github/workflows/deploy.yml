@@ -169,5 +169,10 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/admin/)" = 404
           test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/login/)" = 404
           curl --fail --silent --show-error --max-time 15 "https://bpreg.tw1.ru/$PBP_ADMIN_PATH/api/admin.php?action=session" | grep -q '"csrf"'
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://bpreg.tw1.ru/)" = 308
+          redirect_status="$(curl -sS -D /tmp/pbp-http-redirect -o /dev/null -w '%{http_code}' --max-time 15 http://bpreg.tw1.ru/)"
+          if [[ "$redirect_status" != 301 && "$redirect_status" != 308 ]]; then
+            echo "::error::Expected HTTP to HTTPS redirect, got HTTP $redirect_status"
+            exit 1
+          fi
+          grep -qi '^location: https://bpreg.tw1.ru' /tmp/pbp-http-redirect
           echo "HTTPS and retired public administration URLs verified."

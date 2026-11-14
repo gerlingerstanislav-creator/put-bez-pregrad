@@ -3,6 +3,8 @@ Options -Indexes
 # Preserve POST method/body and query string when moving to HTTPS.
 RewriteEngine On
 RewriteCond %{HTTPS} !=on
+# Timeweb terminates HTTPS at Nginx and passes X-HTTPS: 1 to Apache.
+RewriteCond %{HTTP:X-HTTPS} !1
 RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)(:[0-9]+)?$ [NC]
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=308,L,NE]
 

@@ -82,6 +82,15 @@ try:
     ftp.connect(os.environ["TIMEWEB_FTP_HOST"], 21)
     ftp.login(os.environ["TIMEWEB_FTP_USER"], os.environ["TIMEWEB_FTP_PASSWORD"])
     ftp.cwd(os.environ["TIMEWEB_FTP_DIR"])
+    original_ftp_dir = ftp.pwd()
+    try:
+        ftp.cwd("..")
+        outside_ftp_dir = ftp.pwd() != original_ftp_dir
+    except ftplib.all_errors:
+        outside_ftp_dir = False
+    finally:
+        ftp.cwd(original_ftp_dir)
+    print("FTP can reach the parent of the deployed site:", outside_ftp_dir)
     ftp.storbinary("STOR " + remote, io.BytesIO(php.encode("utf-8")))
     uploaded = True
     url = "https://bpreg.tw1.ru/" + remote

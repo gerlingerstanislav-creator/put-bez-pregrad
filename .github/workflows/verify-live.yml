@@ -65,7 +65,7 @@ jobs:
           console.log('Published bundle contains target word:', index >= 0);
           if (index >= 0) console.log('Compiled hero fragment:', JSON.stringify(compiled.slice(Math.max(0, index - 110), index + 210)));
           const fragment = index < 0 ? '' : compiled.slice(Math.max(0, index - 30), index + 110);
-          const bothEmphasis = /["']em["'],null,["']колясочников["'][\\s\\S]{0,100}["']em["'],null,["']в спецавтомобиле["']/.test(fragment);
+          const bothEmphasis = fragment.includes('"em",null,"колясочников"') && fragment.includes('"em",null,"в спецавтомобиле"');
           if (!bothEmphasis)
             throw new Error('Production bundle is missing the two red title highlights');
           console.log('Both original and requested red highlights confirmed on production.');

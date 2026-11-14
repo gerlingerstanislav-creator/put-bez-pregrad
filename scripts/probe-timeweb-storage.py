@@ -41,7 +41,15 @@ function candidate(string $parent, string $base): array {
         'outside_webroot' => !str_starts_with(rtrim($parent, '/') . '/', rtrim($base, '/') . '/')
     ];
 }
+require_once __DIR__ . '/../../api/common.php';
+$runtimeCurrent = SITE_STORAGE;
+$runtimeParent = dirname($runtimeCurrent);
+$storageCreated = is_dir($runtimeCurrent) || @mkdir($runtimeCurrent, 0700, true);
 $result = [
+    'runtime_path_matches_candidate' => $runtimeCurrent === $oldStorage,
+    'runtime_parent_writable' => is_writable($runtimeParent),
+    'created_private_directory' => $storageCreated,
+    'directory_exists_after' => is_dir($runtimeCurrent),
     'current' => candidate($oldParent, $root),
     'ancestor_up_one' => candidate(dirname($oldParent), $root),
     'ancestor_up_two' => candidate(dirname($oldParent, 2), $root),

@@ -27,7 +27,7 @@ const primaryPieces = computed(() => {
         <div class="hero__content container">
           <div class="hero__text">
             <p class="eyebrow">УЛЬЯНОВСК И УЛЬЯНОВСКАЯ ОБЛАСТЬ · 24/7</p>
-            <h1 id="hero-title">Перевозка инвалидов-<em>колясочников</em> в спецавтомобиле по городу и области</h1>
+            <h1 id="hero-title">Перевозка инвалидов-<em>колясочников</em> <em>в спецавтомобиле</em> по городу и области</h1>
             <div class="hero__phone-panel">
               <span class="hero__phone-label">Позвоните и закажите поездку</span>
               <a :href="primaryPhoneHref" class="hero__phone" :aria-label="'Позвонить на номер ' + primaryPhone">

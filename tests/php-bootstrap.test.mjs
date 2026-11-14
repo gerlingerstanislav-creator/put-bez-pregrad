@@ -73,3 +73,54 @@ test('real PHP migration updates admin hash but preserves existing SMTP and cont
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+
+test('fresh storage imports legacy SMTP when readable and hides it from HTTP', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pbp-legacy-import-'));
+  const site = path.join(dir, 'site');
+  const slug = 'legacy-migration-admin-123456789';
+  const oldDir = path.join(dir, '.pbp-private');
+  fs.mkdirSync(oldDir, { recursive: true });
+  fs.mkdirSync(path.join(site, 'api'), { recursive: true });
+  fs.mkdirSync(path.join(site, slug, 'api'), { recursive: true });
+  fs.copyFileSync('public/api/common.php', path.join(site, 'api', 'common.php'));
+  const legacy = {
+    password_hash: 'synthetic-old-hash',
+    settings: { request_email: 'old@example.com' },
+    smtp: { host: 'smtp.timeweb.ru', user: 'old@example.com', password: 'old-synthetic-smtp-secret' },
+  };
+  const guard = '<?php http_response_code(404); exit; ?>\n';
+  fs.writeFileSync(path.join(oldDir, 'state.php'), guard + JSON.stringify(legacy));
+  const { filename, token } = prepareAdminBootstrap(site, {
+    PBP_ADMIN_PATH: slug, GITHUB_ENV: path.join(dir, 'github-env'),
+  });
+  const hash = execFileSync('php', ['-r',
+    'echo password_hash("synthetic new password for legacy test", PASSWORD_BCRYPT, ["cost" => 12]);',
+  ], { encoding: 'utf8' }).trim();
+  const port = await availablePort();
+  const child = spawn('php', ['-S', '127.0.0.1:' + port, '-t', site], { stdio: 'ignore' });
+  try {
+    const url = 'http://127.0.0.1:' + port + '/' + slug + '/api/' + filename;
+    let ready = false;
+    for (let i = 0; i < 35; i += 1) {
+      try { await fetch(url); ready = true; break; } catch { await delay(100); }
+    }
+    assert.ok(ready);
+    const result = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password_hash: hash }),
+    });
+    assert.equal(result.status, 200);
+    const newState = JSON.parse(fs.readFileSync(
+      path.join(site, '.pbp-private', 'state.php'), 'utf8').slice(guard.length));
+    assert.equal(newState.password_hash, hash);
+    assert.deepEqual(newState.settings, legacy.settings);
+    assert.deepEqual(newState.smtp, legacy.smtp);
+    const direct = await fetch('http://127.0.0.1:' + port + '/.pbp-private/state.php');
+    assert.equal(direct.status, 404);
+    assert.ok(!(await direct.text()).includes('old-synthetic-smtp-secret'));
+  } finally {
+    child.kill();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

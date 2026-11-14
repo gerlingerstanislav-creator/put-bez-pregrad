@@ -28,11 +28,28 @@ if (!is_string($hash) ||
     response_json(['error' => 'Invalid password hash'], 422);
 }
 
-// Fresh site: create protected state.php with defaults. Existing contacts and SMTP
-// credentials are preserved; this handler never writes secrets into the build.
+// If the old out-of-webroot state is readable (it may be read-only under
+// Timeweb isolation), preserve it without requiring SMTP credentials again.
+// Never overwrite an already initialized new storage/state.php.
+$previous = null;
+if (!is_file(state_file())) {
+    $oldFile = dirname(dirname(SITE_STORAGE)) . '/.pbp-private/state.php';
+    $raw = @file_get_contents($oldFile);
+    $prefix = "<?php http_response_code(404); exit; ?>\n";
+    if (is_string($raw) && str_starts_with($raw, $prefix)) {
+        $decoded = json_decode(substr($raw, strlen($prefix)), true);
+        if (is_array($decoded)
+            && is_array($decoded['settings'] ?? null)
+            && is_string($decoded['password_hash'] ?? null)) {
+            $previous = $decoded;
+        }
+    }
+}
 
-// Preserves SMTP credentials, contacts and any unrelated server-side state.
-update_state(static function (array $state) use ($hash): array {
+update_state(static function (array $state) use ($hash, $previous): array {
+    if (!is_string($state['password_hash'] ?? null) && is_array($previous)) {
+        $state = $previous;
+    }
     $state['password_hash'] = $hash;
     $state['auth_generation'] = bin2hex(random_bytes(16));
     return $state;

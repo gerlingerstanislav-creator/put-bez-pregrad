@@ -46,6 +46,25 @@ jobs:
           done
           status="$(curl --silent --show-error -o /dev/null -w '%{http_code}' --max-time 15 http://bpreg.tw1.ru/)"
           echo "HTTP root redirect: HTTP $status"
+      - name: Verify both production hero color accents in published bundle
+        run: |
+          node --input-type=module <<'NODE'
+          const origin = 'https://bpreg.tw1.ru';
+          const page = await fetch(origin + '/', {signal: AbortSignal.timeout(20000)});
+          if (!page.ok) throw new Error('Production homepage not available');
+          const html = await page.text();
+          const scripts = [...html.matchAll(/<script[^>]+src="([^"]+\.js)"/g)].map(m => m[1]);
+          if (!scripts.length) throw new Error('No production JS found');
+          const bundles = await Promise.all(scripts.map(async p => {
+            const response = await fetch(new URL(p, origin), {signal: AbortSignal.timeout(20000)});
+            if (!response.ok) throw new Error('Production JS unavailable');
+            return response.text();
+          }));
+          const compiled = bundles.join('');
+          if (!compiled.includes('инвалидов-<em>колясочников</em> <em>в спецавтомобиле</em>'))
+            throw new Error('Production bundle is missing the two red title highlights');
+          console.log('Both original and requested red highlights confirmed on production.');
+          NODE
       - name: Compare Node HTTPS transport without exposing the URL
         shell: bash
         run: |

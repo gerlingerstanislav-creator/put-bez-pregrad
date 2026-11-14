@@ -53,6 +53,7 @@ header('Cache-Control: no-store');
 if (!\$ok) { http_response_code(503); echo 'write-denied'; exit; }
 echo 'ready';
 PHP
+chmod 0644 "$probe"
 trap 'rm -f "$probe"' EXIT
 response="$(curl -fsS --max-time 20 -X POST --data-urlencode "token=$token" \
   "https://bpreg.tw1.ru/$probe_filename" 2>/dev/null || true)"

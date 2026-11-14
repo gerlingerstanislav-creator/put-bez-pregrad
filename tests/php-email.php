@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
-require_once dirname(__DIR__) . '/site-dist/app/api/common.php';
-require_once dirname(__DIR__) . '/site-dist/app/api/mailer.php';
+require_once dirname(__DIR__) . '/dist/api/common.php';
+require_once dirname(__DIR__) . '/dist/api/mailer.php';
 
 // This test is executed with normal PHP and with php -n (no ext-intl).
 $cases = [

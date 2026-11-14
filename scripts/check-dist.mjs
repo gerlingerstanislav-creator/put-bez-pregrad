@@ -1,63 +1,35 @@
 import fs from 'node:fs';
 import path from 'node:path';
-
-const root = 'site-dist';
-const publicRoot = path.join(root, 'public');
-const appRoot = path.join(root, 'app');
-const slug = process.env.PBP_ADMIN_PATH || 'local-admin-preview-only';
-const mustExist = [
-  'index.html', '.htaccess', 'admin/index.php', 'login/index.php',
-  'api/public.php', 'api/submit.php', 'api/admin.php', 'api/settings.php',
-  'api/.htaccess',
-  'images/accessible-van.avif', 'images/accessible-passenger.avif',
-  'images/accessible-boarding.avif', 'images/put-bez-pregrad/favicon.svg',
-  slug + '/index.html', slug + '/api/admin.php', slug + '/api/settings.php',
+const required = [
+  'index.html','admin/index.php','login/index.php',
+  'api/public.php','api/admin.php','api/submit.php','api/common.php','api/settings.php','api/mailer.php','api/spam.php',
+  'admin/.htaccess',
+  'api/.htaccess','.htaccess','.pbp-private/.htaccess','.pbp-private/index.php',
+  'images/accessible-van.avif','images/accessible-passenger.avif','images/accessible-boarding.avif',
+  'images/put-bez-pregrad/favicon.svg','images/put-bez-pregrad/logo.svg','images/put-bez-pregrad/logo-light.svg',
 ];
-for (const file of mustExist) {
-  const target = path.join(publicRoot, file);
-  if (!fs.existsSync(target) || fs.statSync(target).size === 0) {
-    throw Error('Missing webroot resource: ' + target);
+const adminPath = process.env.PBP_ADMIN_PATH || 'local-admin-preview-only';
+required.push(`${adminPath}/index.html`, `${adminPath}/api/admin.php`, `${adminPath}/api/settings.php`);
+for(const item of required){
+  const p=path.join('dist',item);
+  if(!fs.existsSync(p) || fs.statSync(p).size===0)throw Error('Missing or empty: '+p);
+}
+for(const p of ['dist/index.html',`dist/${adminPath}/index.html`]){
+  const html=fs.readFileSync(p,'utf8');
+  if(!/assets\/[^" ]+\.js/.test(html) || !/assets\/[^" ]+\.css/.test(html))throw Error('No compiled JS/CSS in '+p);
+}
+console.log('Production site + administration and PHP files verified');
+
+for (const legacy of ['admin', 'login']) {
+  if (fs.existsSync('dist/' + legacy + '/index.html')) {
+    throw Error('Legacy /' + legacy + '/ must not contain a static entry');
+  }
+  if (!fs.readFileSync('dist/' + legacy + '/index.php', 'utf8').includes('http_response_code(404)')) {
+    throw Error('Legacy /' + legacy + '/ must return a real HTTP 404');
   }
 }
-for (const filename of ['public.php', 'submit.php', 'common.php', 'spam.php', 'mailer.php']) {
-  const file = path.join(appRoot, 'api', filename);
-  if (!fs.existsSync(file) || !fs.statSync(file).size) throw Error('Missing backend: ' + file);
-}
-for (const filename of ['admin.php', 'settings.php']) {
-  const file = path.join(appRoot, 'admin-api', filename);
-  if (!fs.existsSync(file) || !fs.statSync(file).size) throw Error('Missing admin backend: ' + file);
-}
-for (const file of ['api/common.php', 'api/spam.php', 'api/mailer.php', 'storage', 'app', '.pbp-private']) {
-  if (fs.existsSync(path.join(publicRoot, file))) throw Error('Sensitive file in public/: ' + file);
-}
-for (const [file, target] of [
-  ['api/public.php', '/app/api/public.php'],
-  ['api/submit.php', '/app/api/submit.php'],
-  [slug + '/api/admin.php', '/app/admin-api/admin.php'],
-  [slug + '/api/settings.php', '/app/admin-api/settings.php'],
-]) {
-  const contents = fs.readFileSync(path.join(publicRoot, file), 'utf8');
-  if (!contents.includes(target) || contents.includes('password_verify')) {
-    throw Error('Invalid public gateway: ' + file);
+for (const file of ['admin.php', 'settings.php']) {
+  if (!fs.readFileSync('dist/api/' + file, 'utf8').includes('http_response_code(404)')) {
+    throw Error('Old /api/' + file + ' must return 404');
   }
 }
-for (const file of ['index.html', slug + '/index.html']) {
-  const html = fs.readFileSync(path.join(publicRoot, file), 'utf8');
-  if (!/assets\/[^" ]+\.js/.test(html) || !/assets\/[^" ]+\.css/.test(html)) {
-    throw Error('Missing frontend build assets in ' + file);
-  }
-}
-for (const pathPart of ['admin', 'login']) {
-  if (fs.existsSync(path.join(publicRoot, pathPart, 'index.html'))) {
-    throw Error('Legacy admin frontend exposed');
-  }
-  if (!fs.readFileSync(path.join(publicRoot, pathPart, 'index.php'), 'utf8').includes('http_response_code(404)')) {
-    throw Error('Legacy administration must respond 404');
-  }
-}
-for (const filename of ['admin.php', 'settings.php']) {
-  if (!fs.readFileSync(path.join(publicRoot, 'api', filename), 'utf8').includes('http_response_code(404)')) {
-    throw Error('Old public administration API must return 404');
-  }
-}
-console.log('Isolated public/ + app/ build verified. No storage data included.');

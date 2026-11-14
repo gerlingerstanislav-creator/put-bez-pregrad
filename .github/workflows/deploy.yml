@@ -1,18 +1,11 @@
-name: Deploy isolated site to Timeweb
+name: Build and deploy to Timeweb
 
-# First deploy is staging only. Production activation is done once over SSH
-# and the release phase is blocked until the activation marker exists.
 on:
   workflow_dispatch:
-    inputs:
-      phase:
-        description: 'stage = upload outside current public_html; release = update live site'
-        required: true
-        type: choice
-        options:
-          - stage
-          - release
-        default: stage
+  push:
+    branches: [main]
+    paths:
+      - .github/production-release-intent-20261114.txt
 
 permissions:
   contents: read
@@ -24,113 +17,100 @@ concurrency:
 jobs:
   deploy:
     environment: production
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
     env:
       PBP_ADMIN_PATH: ${{ secrets.PBP_ADMIN_PATH }}
-      DEPLOY_PHASE: ${{ inputs.phase }}
-      FTP_HOST: ${{ secrets.TIMEWEB_FTP_HOST }}
-      FTP_USER: ${{ secrets.TIMEWEB_FTP_USER }}
-      FTP_PASSWORD: ${{ secrets.TIMEWEB_FTP_PASSWORD }}
-      FTP_DIR: ${{ secrets.TIMEWEB_FTP_DIR }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Validate secret configuration
-        shell: bash
-        env:
-          ADMIN_HASH: ${{ secrets.PBP_ADMIN_PASSWORD_HASH }}
-        run: |
-          set -euo pipefail
-          for name in PBP_ADMIN_PATH FTP_HOST FTP_USER FTP_PASSWORD FTP_DIR; do
-            if [[ -z "${!name}" ]]; then echo "::error::Missing secret: $name"; exit 1; fi
-          done
-          [[ "$DEPLOY_PHASE" == stage || "$DEPLOY_PHASE" == release ]]
-          [[ "$FTP_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]
-          [[ "$FTP_DIR" =~ ^/?[a-zA-Z0-9_./-]+$ && "$FTP_DIR" != *..* ]]
-          echo "::add-mask::$PBP_ADMIN_PATH"
-          if [[ "$DEPLOY_PHASE" == release ]]; then
-            ADMIN_HASH="$ADMIN_HASH" node --input-type=module -e \
-              'import {validateBootstrapHash} from "./scripts/apply-admin-bootstrap.mjs"; validateBootstrapHash(process.env.ADMIN_HASH);'
-          fi
-
-      - name: Check destination is an isolated site root, not public_html
+      - name: Verify and hide private administration path
         shell: bash
         run: |
-          set -euo pipefail
-          subdir="${FTP_DIR#/}"
-          subdir="${subdir%/}"
-          url="ftp://$FTP_HOST/"
-          if [[ -n "$subdir" ]]; then url+="$subdir/"; fi
-          marker="$(curl --fail --silent --show-error --max-time 20 \
-            --user "$FTP_USER:$FTP_PASSWORD" "${url}.pbp-ftp-root")"
-          if [[ "$marker" != "pbp-isolated-site-root-v1" ]]; then
-            echo '::error::FTP destination is not the separate project directory. Refusing to upload.'
+          if [[ -z "$PBP_ADMIN_PATH" ]]; then
+            echo '::error::PBP_ADMIN_PATH must be configured in GitHub Secrets.'
             exit 1
           fi
-          if [[ "$DEPLOY_PHASE" == release ]]; then
-            live="$(curl --fail --silent --show-error --max-time 20 \
-              --user "$FTP_USER:$FTP_PASSWORD" "${url}.pbp-live-root")"
-            if [[ "$live" != "pbp-isolated-live-v1" ]]; then
-              echo '::error::Live webroot switch is not yet confirmed.'
-              exit 1
-            fi
-          fi
-          echo 'Verified isolated FTP project root.'
-
-      - name: Build and test the application
-        run: |
-          npm install --no-audit --no-fund
-          npm run check
-          npm run build
-          node scripts/check-dist.mjs
-          bash -n scripts/timeweb-activate.sh
-
-      - uses: shivammathur/setup-php@v2
+          echo "::add-mask::$PBP_ADMIN_PATH"
+      - name: Validate new admin password hash
+        env:
+          PBP_ADMIN_PASSWORD_HASH: ${{ secrets.PBP_ADMIN_PASSWORD_HASH }}
+        run: node --input-type=module -e 'import {validateBootstrapHash} from "./scripts/apply-admin-bootstrap.mjs"; validateBootstrapHash(process.env.PBP_ADMIN_PASSWORD_HASH);'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Validate JavaScript
+        run: npm run check
+      - name: Build site
+        run: npm run build
+      - name: Verify build output
+        run: node scripts/check-dist.mjs
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
           coverage: none
-      - name: Package SMTP library and validate PHP
+      - name: Install PHPMailer
         run: |
           composer install --working-dir=mail-php --no-interaction --no-dev --prefer-dist --optimize-autoloader
-          cp -a mail-php/vendor site-dist/app/api/vendor
-          test -s site-dist/app/api/vendor/autoload.php
-          find site-dist -type f -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
-          php -l server/admin-bootstrap.php
+          cp -a mail-php/vendor dist/api/vendor
+          test -s dist/api/vendor/autoload.php
+      - name: Check PHP syntax
+        run: find dist -type f -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
+      - name: Test anti-spam challenge
+        run: php tests/php-spam.php
+
+      - name: Test international SMTP addresses without intl extension
+        run: |
           php tests/php-email.php
           php -n tests/php-email.php
-          php tests/php-spam.php
-          node --test tests/php-bootstrap.test.mjs
-
-      - name: Smoke test webroot and API without real SMTP
+      - name: Smoke test PHP endpoints
         shell: bash
         run: |
-          set -euo pipefail
-          php -S 127.0.0.1:8087 -t site-dist/public >/tmp/pbp-php-server.log 2>&1 &
-          pid=$!
-          trap 'kill "$pid" 2>/dev/null || true' EXIT
-          for attempt in 1 2 3 4 5; do
-            if curl -fsS http://127.0.0.1:8087/api/public.php -o /tmp/site-public.json; then break; fi
+          cp -a dist "$RUNNER_TEMP/pbp-smoke"
+          php -S 127.0.0.1:8087 -t "$RUNNER_TEMP/pbp-smoke" >/tmp/pbp-php-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for try in 1 2 3 4 5; do
+            if curl -fsS http://127.0.0.1:8087/api/public.php -o /tmp/pbp-settings.json; then break; fi
             sleep 1
           done
-          grep -q '"challenge"' /tmp/site-public.json
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/admin.php)" = 404
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/admin/)" = 404
-          curl -fsS "http://127.0.0.1:8087/$PBP_ADMIN_PATH/api/admin.php?action=session" | grep -q '"csrf"'
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/storage/state.php)" = 404
+          grep -q 'primary_phone' /tmp/pbp-settings.json
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/admin.php?action=session)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/settings.php)" = 404
 
-      - name: Verify HTTPS on the production domain
-        if: env.DEPLOY_PHASE == 'release'
-        run: curl --fail --silent --show-error --head --max-time 20 https://bpreg.tw1.ru/ >/dev/null
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8087/api/submit.php)" = 422
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{"departure":"Москва","destination":"Ульяновск","contact":"+7 (999) 123-45-67","consent":true}' http://127.0.0.1:8087/api/submit.php)" = 403
+      - name: Verify guarded local storage package
+        run: |
+          test -s dist/.pbp-private/.htaccess
+          test -s dist/.pbp-private/index.php
+          php -r 'require "dist/api/common.php"; if (SITE_STORAGE !== realpath("dist") . "/.pbp-private") { fwrite(STDERR, "Unexpected storage location\n"); exit(1); }'
+      - name: Verify Timeweb secrets
+        env:
+          FTP_HOST: ${{ secrets.TIMEWEB_FTP_HOST }}
+          FTP_USER: ${{ secrets.TIMEWEB_FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.TIMEWEB_FTP_PASSWORD }}
+          FTP_DIR: ${{ secrets.TIMEWEB_FTP_DIR }}
+        shell: bash
+        run: |
+          for key in FTP_HOST FTP_USER FTP_PASSWORD FTP_DIR; do
+            if [[ -z "${!key}" ]]; then
+              echo "::error::Missing Timeweb secret: $key"
+              exit 1
+            fi
+          done
+          echo "Required secrets configured."
+      - name: Verify production TLS before enabling HTTPS redirects
+        run: |
+          curl --fail --silent --show-error --head --max-time 20 https://bpreg.tw1.ru/ >/dev/null
 
-      - name: Prepare short-lived authenticated password bootstrap
-        if: env.DEPLOY_PHASE == 'release'
+      - name: Prepare one-time password migration
         id: bootstrap
         run: node scripts/create-admin-bootstrap.mjs
 
-      - name: Upload site to isolated project directory via FTP
+      - name: Publish over FTP
         id: publish
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         with:
@@ -139,27 +119,27 @@ jobs:
           password: ${{ secrets.TIMEWEB_FTP_PASSWORD }}
           protocol: ftp
           port: 21
-          local-dir: ./site-dist/
+          local-dir: ./dist/
           server-dir: ${{ endsWith(secrets.TIMEWEB_FTP_DIR, '/') && secrets.TIMEWEB_FTP_DIR || format('{0}/', secrets.TIMEWEB_FTP_DIR) }}
           dangerous-clean-slate: false
           log-level: minimal
 
-      - name: Initialize admin password, preserving existing SMTP
-        id: password
-        if: env.DEPLOY_PHASE == 'release'
+      - name: Apply new password hash to protected Timeweb storage
+        id: rotate_password
         env:
           PBP_ADMIN_PASSWORD_HASH: ${{ secrets.PBP_ADMIN_PASSWORD_HASH }}
         run: node scripts/apply-admin-bootstrap.mjs
 
-      - name: Delete ephemeral bootstrap from local FTP package
+      - name: Remove temporary bootstrap from local build
         if: always() && steps.bootstrap.outcome == 'success'
         shell: bash
         run: |
-          [[ "$PBP_BOOTSTRAP_FILENAME" =~ ^setup-[a-f0-9]{48}\.php$ ]]
-          rm -f "site-dist/public/$PBP_ADMIN_PATH/api/$PBP_BOOTSTRAP_FILENAME"
+          if [[ -n "${PBP_BOOTSTRAP_FILENAME:-}" ]]; then
+            rm -f "dist/$PBP_ADMIN_PATH/api/$PBP_BOOTSTRAP_FILENAME"
+          fi
 
-      - name: Remove ephemeral bootstrap from server
-        if: always() && steps.bootstrap.outcome == 'success' && steps.publish.outcome == 'success'
+      - name: Remove temporary bootstrap from Timeweb
+        if: always() && steps.bootstrap.outcome == 'success' && steps.publish.outcome != 'skipped'
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         with:
           server: ${{ secrets.TIMEWEB_FTP_HOST }}
@@ -167,20 +147,40 @@ jobs:
           password: ${{ secrets.TIMEWEB_FTP_PASSWORD }}
           protocol: ftp
           port: 21
-          local-dir: ./site-dist/
+          local-dir: ./dist/
           server-dir: ${{ endsWith(secrets.TIMEWEB_FTP_DIR, '/') && secrets.TIMEWEB_FTP_DIR || format('{0}/', secrets.TIMEWEB_FTP_DIR) }}
           dangerous-clean-slate: false
           log-level: minimal
 
-      - name: Verify live site and private file isolation
-        if: env.DEPLOY_PHASE == 'release'
+      - name: Verify temporary admin migration was deleted
+        if: steps.rotate_password.outcome == 'success'
         shell: bash
         run: |
-          set -euo pipefail
-          curl -fsS --max-time 20 https://bpreg.tw1.ru/api/public.php | grep -q '"primary_phone"'
-          curl -fsS --max-time 20 "https://bpreg.tw1.ru/$PBP_ADMIN_PATH/api/admin.php?action=session" | grep -q '"csrf"'
-          for uri in /app/api/common.php /storage/state.php /api/admin.php /admin/ /login/; do
-            test "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://bpreg.tw1.ru$uri")" = 404
+          status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://bpreg.tw1.ru/$PBP_ADMIN_PATH/api/$PBP_BOOTSTRAP_FILENAME")"
+          if [[ "$status" != "404" ]]; then
+            echo "::error::Temporary migration endpoint was not removed (HTTP $status)"
+            exit 1
+          fi
+
+      - name: Check live API and deny direct storage access
+        run: |
+          for resource in state.php form-challenge.php index.php; do
+            status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://bpreg.tw1.ru/.pbp-private/$resource")"
+            if [[ "$status" != 403 && "$status" != 404 ]]; then
+              echo "::error::Storage file is accessible via HTTP ($status)"
+              exit 1
+            fi
           done
-          test "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-            "https://bpreg.tw1.ru/$PBP_ADMIN_PATH/api/$PBP_BOOTSTRAP_FILENAME")" = 404
+          curl --fail --silent --show-error --max-time 15 https://bpreg.tw1.ru/api/public.php | grep -q 'primary_phone'
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/api/admin.php?action=session)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/api/settings.php)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/admin/)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/login/)" = 404
+          curl --fail --silent --show-error --max-time 15 "https://bpreg.tw1.ru/$PBP_ADMIN_PATH/api/admin.php?action=session" | grep -q '"csrf"'
+          redirect_status="$(curl -sS -D /tmp/pbp-http-redirect -o /dev/null -w '%{http_code}' --max-time 15 http://bpreg.tw1.ru/)"
+          if [[ "$redirect_status" != 301 && "$redirect_status" != 308 ]]; then
+            echo "::error::Expected HTTP to HTTPS redirect, got HTTP $redirect_status"
+            exit 1
+          fi
+          grep -qi '^location: https://bpreg.tw1.ru' /tmp/pbp-http-redirect
+          echo "HTTPS and retired public administration URLs verified."

@@ -1,8 +1,9 @@
 <?php
 declare(strict_types=1);
 
-// __DIR__ is <site>/app/api, never the HTTP document root.
-define('SITE_STORAGE', dirname(__DIR__, 2) . '/storage');
+// Keep runtime files on the same virtual-host filesystem as the PHP API.
+// Every potentially sensitive file is PHP-guarded; Apache additionally denies this directory.
+define('SITE_STORAGE', dirname(__DIR__) . '/.pbp-private');
 
 function defaults(): array {
     return [
@@ -120,7 +121,7 @@ function update_state(callable $update): array {
         $state = read_state_file();
         $next = $update($state);
         if (!is_array($next)) throw new RuntimeException('Invalid state');
-        $temp = SITE_STORAGE . '/.state-' . bin2hex(random_bytes(10)) . '.tmp';
+        $temp = SITE_STORAGE . '/.state-' . bin2hex(random_bytes(10)) . '.php';
         $contents = "<?php http_response_code(404); exit; ?>\n" .
             json_encode($next, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
         if (file_put_contents($temp, $contents, LOCK_EX) === false) throw new RuntimeException('Cannot write state');
@@ -144,7 +145,10 @@ function throttle(string $action, int $limit, int $seconds): bool {
     try {
         if (!flock($handle, LOCK_EX)) return false;
         $raw = stream_get_contents($handle);
-        $parts = is_string($raw) ? explode(',', trim($raw)) : [];
+        // The guard stops direct HTTP requests even when Nginx ignores .htaccess.
+        $guard = "<?php http_response_code(404); exit; ?>\n";
+        $parts = is_string($raw) && str_starts_with($raw, $guard)
+            ? explode(',', trim(substr($raw, strlen($guard)))) : [];
         $window = (int) ($parts[0] ?? 0);
         $count = (int) ($parts[1] ?? 0);
         $now = time();
@@ -152,8 +156,9 @@ function throttle(string $action, int $limit, int $seconds): bool {
         $count++;
         ftruncate($handle, 0);
         rewind($handle);
-        fwrite($handle, $window . ',' . $count);
+        if (fwrite($handle, $guard . $window . ',' . $count) === false) return false;
         fflush($handle);
+        chmod($path, 0600);
         return $count <= $limit;
     } finally {
         flock($handle, LOCK_UN);

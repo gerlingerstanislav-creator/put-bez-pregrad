@@ -8,6 +8,4 @@ dist/
 # Runtime configuration stays outside document root
 .pbp-private/
 
-# Production package; storage/ is never part of a release
-site-dist/
-storage/
+# Directory is created at runtime; only deny files are versioned in public/.

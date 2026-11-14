@@ -14,7 +14,7 @@ const FORM_CHALLENGE_MAX_AGE = 1800;
 function form_challenge_secret(): string
 {
     storage_ready();
-    $file = SITE_STORAGE . '/form-challenge.key';
+    $file = SITE_STORAGE . '/form-challenge.php';
     $handle = fopen($file, 'c+');
     if ($handle === false || !flock($handle, LOCK_EX)) {
         response_json(['error' => 'Защита формы временно недоступна'], 503);
@@ -22,18 +22,22 @@ function form_challenge_secret(): string
 
     try {
         rewind($handle);
-        $key = stream_get_contents($handle);
-        if (!is_string($key) || strlen($key) !== 32) {
-            $key = random_bytes(32);
+        $raw = stream_get_contents($handle);
+        $guard = "<?php http_response_code(404); exit; ?>\n";
+        $stored = is_string($raw) && str_starts_with($raw, $guard)
+            ? substr($raw, strlen($guard)) : '';
+        if (!preg_match('/^[a-f0-9]{64}$/D', $stored)) {
+            $stored = bin2hex(random_bytes(32));
             ftruncate($handle, 0);
             rewind($handle);
-            if (fwrite($handle, $key) !== 32) {
+            $contents = $guard . $stored;
+            if (fwrite($handle, $contents) !== strlen($contents)) {
                 response_json(['error' => 'Защита формы временно недоступна'], 503);
             }
             fflush($handle);
             chmod($file, 0600);
         }
-        return $key;
+        return hex2bin($stored);
     } finally {
         flock($handle, LOCK_UN);
         fclose($handle);

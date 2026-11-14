@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-define('SITE_STORAGE', dirname(__DIR__, 2) . '/.pbp-private');
+define('SITE_STORAGE', dirname(__DIR__, 2) . '/private');
 
 function defaults(): array {
     return [

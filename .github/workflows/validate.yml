@@ -39,8 +39,15 @@ jobs:
           cp -a mail-php/vendor dist/api/vendor
       - name: Lint PHP
         run: |
-          find dist -type f -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
+          find dist private-dist -type f -name '*.php' -not -path '*/vendor/*' -print0 | xargs -0 -n1 php -l
           php -l server/admin-bootstrap.php
+      - name: Install private admin handlers for local PHP integration
+        run: |
+          mkdir -p private/admin-api
+          cp -a private-dist/admin-api/. private/admin-api/
+          ln -s dist web # Simulate production sibling web/ for out-of-root PHP handlers
+      - name: Verify migration shell syntax
+        run: bash -n scripts/timeweb-prepare.sh scripts/timeweb-cutover.sh scripts/timeweb-rollback.sh scripts/timeweb-finish.sh
       - name: Test password rotation through PHP without touching real SMTP
         run: node --test tests/php-bootstrap.test.mjs
       - name: Test Timeweb reverse proxy HTTPS signals

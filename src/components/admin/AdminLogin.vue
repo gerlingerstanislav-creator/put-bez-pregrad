@@ -13,7 +13,7 @@ function emitLogin() {
 </script>
 
 <template>
-<section v-else-if="!authorized" class="panel">
+<section class="panel">
         <h2>Вход</h2>
         <form @submit.prevent="emitLogin" class="form">
           <label for="pwd">Пароль администратора</label>

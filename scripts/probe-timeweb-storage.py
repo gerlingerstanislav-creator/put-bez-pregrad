@@ -45,7 +45,20 @@ require_once __DIR__ . '/../../api/common.php';
 $runtimeCurrent = SITE_STORAGE;
 $runtimeParent = dirname($runtimeCurrent);
 $storageCreated = is_dir($runtimeCurrent) || @mkdir($runtimeCurrent, 0700, true);
+$failure = strtolower((string) (error_get_last()['message'] ?? ''));
+$errorClass = 'unknown';
+foreach (['permission' => 'permission denied', 'quota' => 'quota', 'space' => 'no space', 'exists' => 'file exists', 'basedir' => 'open_basedir'] as $key => $phrase) {
+    if (str_contains($failure, $phrase)) { $errorClass = $key; break; }
+}
+$testWrites = [];
+foreach (['parent_of_webroot' => $runtimeParent, 'webroot' => $root, 'temporary' => sys_get_temp_dir()] as $name => $parent) {
+    $probe = $parent . '/pbp-test-' . bin2hex(random_bytes(8));
+    $testWrites[$name] = @mkdir($probe, 0700, false);
+    if ($testWrites[$name]) @rmdir($probe);
+}
 $result = [
+    'mkdir_error_class' => $errorClass,
+    'test_create_subdir' => $testWrites,
     'runtime_path_matches_candidate' => $runtimeCurrent === $oldStorage,
     'runtime_parent_writable' => is_writable($runtimeParent),
     'created_private_directory' => $storageCreated,

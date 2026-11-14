@@ -1,2 +1,4 @@
 2026-11-14: approved retry for Timeweb X-HTTPS reverse-proxy hotfix and admin-password migration.
 2026-11-14: owner-approved hero text emphasis hotfix; retain existing color on 'в спецавтомобиле' and highlight 'колясочников'.
+
+2026-11-15: owner-approved production release: retain flat public_html, use PHP-guarded writable storage under .pbp-private, restore application and admin form without Timeweb reconfiguration.

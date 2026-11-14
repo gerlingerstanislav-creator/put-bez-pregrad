@@ -177,6 +177,69 @@ try:
                 print("Storage exists but PHP lacks permission; no broad chmod was applied.")
             else:
                 print("Protected storage directory is ready for PHP.")
+    # A 0700 directory created by FTP may belong to a different Unix account
+    # from the PHP worker. In that case let PHP own an empty staging directory,
+    # and let FTP move it outside public_html without relaxing permissions.
+    needs_owner_repair = (
+        outside_ftp_dir
+        and report.get("current", {}).get("storage_is_dir")
+        and not report.get("test_create_subdir", {}).get("private_storage", True)
+        and not report.get("current", {}).get("state_file_exists")
+    )
+    if needs_owner_repair:
+        print("PHP cannot create children in FTP-owned private storage; attempting ownership-safe repair.")
+        stage_response = subprocess.run([
+            "curl", "--silent", "--show-error", "--fail", "--max-time", "20",
+            "-H", "Content-Type: application/json", "--data-binary", "@-", url,
+        ], input=json.dumps({"token": token, "create_stage": True}),
+            text=True, capture_output=True, timeout=25)
+        if stage_response.returncode:
+            raise RuntimeError("Could not prepare private directory owned by PHP")
+        staged = bool(json.loads(stage_response.stdout).get("created"))
+        if not staged:
+            raise RuntimeError("PHP could not create an empty secure staging directory")
+        try:
+            ftp.cwd("..")
+            try:
+                # rmd fails if any settings or secret files exist: do not delete them.
+                ftp.rmd(".pbp-private")
+            except ftplib.all_errors:
+                raise RuntimeError("Existing private directory is not empty or cannot be moved safely")
+            finally:
+                ftp.cwd(original_ftp_dir)
+            try:
+                ftp.rename(stage_name, "../.pbp-private")
+            except ftplib.all_errors:
+                ftp.cwd("..")
+                try:
+                    ftp.mkd(".pbp-private")
+                    ftp.sendcmd("SITE CHMOD 700 .pbp-private")
+                except ftplib.all_errors:
+                    print("WARNING: Failed to recreate empty FTP-owned storage after rename failure")
+                finally:
+                    ftp.cwd(original_ftp_dir)
+                raise RuntimeError("FTP could not move the PHP-owned storage outside webroot")
+            check = subprocess.run([
+                "curl", "--silent", "--show-error", "--fail", "--max-time", "20",
+                "-H", "Content-Type: application/json", "--data-binary", "@-", url,
+            ], input=json.dumps({"token": token}), text=True,
+                capture_output=True, timeout=25)
+            if check.returncode:
+                raise RuntimeError("Could not verify restored private directory")
+            restored = json.loads(check.stdout)
+            print("Private directory is outside webroot:", restored.get("current", {}).get("outside_webroot"))
+            print("PHP can create private children:", restored.get("test_create_subdir", {}).get("private_storage"))
+            if not restored.get("test_create_subdir", {}).get("private_storage"):
+                raise RuntimeError("PHP still cannot write to secure storage after ownership repair")
+        finally:
+            # If FTP rename succeeded the stage no longer exists in public_html.
+            cleanup = subprocess.run([
+                "curl", "--silent", "--show-error", "--fail", "--max-time", "20",
+                "-H", "Content-Type: application/json", "--data-binary", "@-", url,
+            ], input=json.dumps({"token": token, "remove_stage": True}),
+                text=True, capture_output=True, timeout=25)
+            if cleanup.returncode:
+                print("WARNING: Could not verify temporary staging directory cleanup")
 finally:
     if original_ftp_dir is not None:
         try:

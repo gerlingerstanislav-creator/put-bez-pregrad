@@ -173,8 +173,15 @@ function validate_csrf(array $data): void {
         response_json(['error' => 'Недействительный токен сессии'], 403);
     }
 }
+function admin_session_is_authenticated(): bool {
+    if (($_SESSION['admin'] ?? false) !== true) return false;
+    $sessionGeneration = $_SESSION['auth_generation'] ?? null;
+    $stateGeneration = current_state()['auth_generation'] ?? null;
+    return is_string($sessionGeneration) && is_string($stateGeneration)
+        && hash_equals($stateGeneration, $sessionGeneration);
+}
 function require_admin(): void {
-    if (($_SESSION['admin'] ?? false) !== true) response_json(['error' => 'Требуется вход'], 401);
+    if (!admin_session_is_authenticated()) response_json(['error' => 'Требуется вход'], 401);
 }
 function clean_single_line(mixed $value, int $limit): ?string {
     if (!is_string($value)) return null;

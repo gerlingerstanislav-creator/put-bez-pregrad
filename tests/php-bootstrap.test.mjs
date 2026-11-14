@@ -19,9 +19,9 @@ async function availablePort() {
 test('real PHP migration updates admin hash but preserves existing SMTP and contacts', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pbp-php-integration-'));
   const slug = 'integration-private-path-1234567890';
-  const site = path.join(dir, 'site');
+  const site = path.join(dir, 'web');
   const api = path.join(site, 'api');
-  const storage = path.join(dir, '.pbp-private');
+  const storage = path.join(dir, 'private');
   const privateApi = path.join(site, slug, 'api');
   fs.mkdirSync(api, { recursive: true });
   fs.mkdirSync(privateApi, { recursive: true });

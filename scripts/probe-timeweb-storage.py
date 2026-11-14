@@ -184,8 +184,33 @@ try:
     # A 0700 directory created by FTP may belong to a different Unix account
     # from the PHP worker. In that case let PHP own an empty staging directory,
     # and let FTP move it outside public_html without relaxing permissions.
+    # Bootstrap only the anti-spam signing key when it does not already exist.
+    # It is random binary, never recorded in Git or logs, and remains outside webroot.
+    if outside_ftp_dir and report.get("current", {}).get("storage_is_dir"):
+        ftp.cwd("..")
+        try:
+            ftp.cwd(".pbp-private")
+            names = {name.rsplit("/", 1)[-1] for name in ftp.nlst()}
+            if "form-challenge.key" not in names:
+                ftp.storbinary("STOR form-challenge.key", io.BytesIO(secrets.token_bytes(32)))
+                try:
+                    ftp.sendcmd("SITE CHMOD 600 form-challenge.key")
+                except ftplib.all_errors:
+                    pass
+                print("Initialized missing private anti-spam key outside webroot.")
+            else:
+                print("Existing private anti-spam key preserved.")
+        finally:
+            ftp.cwd(original_ftp_dir)
+        status = subprocess.run([
+            "curl", "--silent", "--show-error", "-o", "/dev/null",
+            "-w", "%{http_code}", "--max-time", "20",
+            "https://bpreg.tw1.ru/api/public.php",
+        ], text=True, capture_output=True, timeout=25)
+        print("Live form challenge API HTTP status:", status.stdout.strip())
     needs_owner_repair = (
-        outside_ftp_dir
+        False  # PHP-owner relocation was already tested; hosting denies writes there.
+        and outside_ftp_dir
         and report.get("current", {}).get("storage_is_dir")
         and not report.get("test_create_subdir", {}).get("private_storage", True)
         and not report.get("current", {}).get("state_file_exists")

@@ -54,7 +54,7 @@ foreach (['permission' => 'permission denied', 'quota' => 'quota', 'space' => 'n
     if (str_contains($failure, $phrase)) { $errorClass = $key; break; }
 }
 $testWrites = [];
-foreach (['parent_of_webroot' => $runtimeParent, 'webroot' => $root, 'temporary' => sys_get_temp_dir()] as $name => $parent) {
+foreach (['parent_of_webroot' => $runtimeParent, 'private_storage' => $runtimeCurrent, 'webroot' => $root, 'temporary' => sys_get_temp_dir()] as $name => $parent) {
     $probe = $parent . '/pbp-test-' . bin2hex(random_bytes(8));
     $testWrites[$name] = @mkdir($probe, 0700, false);
     if ($testWrites[$name]) @rmdir($probe);

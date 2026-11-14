@@ -9,6 +9,9 @@ fi
 if [[ ! -d "$root/public_html" && ! -L "$root/public_html" ]]; then
   echo 'Existing public_html directory is missing; refusing migration' >&2; exit 1
 fi
+if [[ -L "$root/web" || -L "$root/private" || -L "$root/private/admin-api" ]]; then
+  echo 'Refusing symlinked deployment/storage directories' >&2; exit 1
+fi
 mkdir -p "$root/web" "$root/private/admin-api"
 # Do not overwrite state created after earlier deployment attempts.
 if [[ -d "$root/.pbp-private" ]]; then

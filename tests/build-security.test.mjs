@@ -23,7 +23,7 @@ test('production packaging relocates admin entry without exposing /admin/', () =
     assert.ok(!fs.existsSync(path.join(dir, 'admin', 'index.html')));
     for (const file of ['admin.php', 'settings.php']) {
       const gateway = fs.readFileSync(path.join(dir, slug, 'api', file), 'utf8');
-      assert.match(gateway, /private\\/admin-api\\//);
+      assert.ok(gateway.includes('/private/admin-api/'));
       assert.ok(fs.statSync(path.join(dir + '-private', 'admin-api', file)).size > 100);
       assert.ok(!gateway.includes('password_verify'));
     }

@@ -11,6 +11,7 @@ slug = os.environ["PBP_ADMIN_PATH"]
 if not slug or not slug.replace("-", "").isalnum():
     raise SystemExit("Invalid admin path secret")
 token = secrets.token_hex(32)
+stage_name = "pbp-private-stage-" + secrets.token_hex(12)
 filename = "storage-check-" + secrets.token_hex(24) + ".php"
 digest = hashlib.sha256(token.encode()).hexdigest()
 marker_name = "pbp-private-path-" + secrets.token_hex(12) + ".marker"
@@ -28,6 +29,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { http_response_code(404); ex
 $body = json_decode((string) file_get_contents('php://input'), true);
 $provided = is_array($body) && is_string($body['token'] ?? null) ? $body['token'] : '';
 if (!hash_equals('__TOKEN_DIGEST__', hash('sha256', $provided))) { http_response_code(404); exit; }
+if (($body['create_stage'] ?? false) === true) {
+    $stage = dirname(__DIR__, 2) . '/__STAGE_NAME__';
+    echo json_encode(['created' => @mkdir($stage, 0700, false)]);
+    exit;
+}
+if (($body['remove_stage'] ?? false) === true) {
+    $stage = dirname(__DIR__, 2) . '/__STAGE_NAME__';
+    echo json_encode(['removed' => @rmdir($stage)]);
+    exit;
+}
 $root = dirname(__DIR__, 2);
 $oldParent = dirname(__DIR__, 3);
 $oldStorage = $oldParent . '/.pbp-private';
@@ -77,7 +88,7 @@ $result = [
     'php_major_minor' => PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION
 ];
 echo json_encode($result, JSON_UNESCAPED_SLASHES);
-""".replace("__TOKEN_DIGEST__", digest).replace("__MARKER_NAME__", marker_name).replace("__MARKER_DIGEST__", marker_digest)
+""".replace("__TOKEN_DIGEST__", digest).replace("__STAGE_NAME__", stage_name).replace("__MARKER_NAME__", marker_name).replace("__MARKER_DIGEST__", marker_digest)
 
 ftp = ftplib.FTP(timeout=25)
 remote = slug + "/api/" + filename

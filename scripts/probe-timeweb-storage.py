@@ -13,6 +13,9 @@ if not slug or not slug.replace("-", "").isalnum():
 token = secrets.token_hex(32)
 filename = "storage-check-" + secrets.token_hex(24) + ".php"
 digest = hashlib.sha256(token.encode()).hexdigest()
+marker_name = "pbp-private-path-" + secrets.token_hex(12) + ".marker"
+marker_value = secrets.token_hex(16)
+marker_digest = hashlib.sha256(marker_value.encode()).hexdigest()
 print("::add-mask::" + slug)
 print("::add-mask::" + filename)
 
@@ -57,6 +60,7 @@ foreach (['parent_of_webroot' => $runtimeParent, 'webroot' => $root, 'temporary'
     if ($testWrites[$name]) @rmdir($probe);
 }
 $result = [
+    'ftp_parent_marker_matches' => is_file($oldParent . '/__MARKER_NAME__') && hash_file('sha256', $oldParent . '/__MARKER_NAME__') === '__MARKER_DIGEST__',
     'mkdir_error_class' => $errorClass,
     'test_create_subdir' => $testWrites,
     'runtime_path_matches_candidate' => $runtimeCurrent === $oldStorage,
@@ -73,11 +77,13 @@ $result = [
     'php_major_minor' => PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION
 ];
 echo json_encode($result, JSON_UNESCAPED_SLASHES);
-""".replace("__TOKEN_DIGEST__", digest)
+""".replace("__TOKEN_DIGEST__", digest).replace("__MARKER_NAME__", marker_name).replace("__MARKER_DIGEST__", marker_digest)
 
 ftp = ftplib.FTP(timeout=25)
 remote = slug + "/api/" + filename
 uploaded = False
+marker_uploaded = False
+original_ftp_dir = None
 try:
     ftp.connect(os.environ["TIMEWEB_FTP_HOST"], 21)
     ftp.login(os.environ["TIMEWEB_FTP_USER"], os.environ["TIMEWEB_FTP_PASSWORD"])
@@ -86,6 +92,9 @@ try:
     try:
         ftp.cwd("..")
         outside_ftp_dir = ftp.pwd() != original_ftp_dir
+        if outside_ftp_dir:
+            ftp.storbinary("STOR " + marker_name, io.BytesIO(marker_value.encode("utf-8")))
+            marker_uploaded = True
     except ftplib.all_errors:
         outside_ftp_dir = False
     finally:
@@ -106,13 +115,35 @@ try:
         raise RuntimeError("Filesystem probe returned unexpected response")
     print("Timeweb filesystem capability report:")
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    if outside_ftp_dir and report.get("ftp_parent_marker_matches") and not report["current"]["storage_is_dir"]:
+        ftp.cwd("..")
+        ftp.mkd(".pbp-private")
+        try:
+            ftp.sendcmd("SITE CHMOD 700 .pbp-private")
+        except ftplib.all_errors:
+            pass
+        ftp.cwd(original_ftp_dir)
+        print("Created dedicated private storage directory via FTP outside webroot.")
 finally:
+    if original_ftp_dir is not None:
+        try:
+            ftp.cwd(original_ftp_dir)
+        except ftplib.all_errors:
+            pass
     if uploaded:
         try:
             ftp.delete(remote)
             print("Temporary probe removed from Timeweb.")
         except ftplib.all_errors:
             print("WARNING: FTP removal of the temporary probe failed; token will not be reused.")
+    if marker_uploaded:
+        try:
+            ftp.cwd(original_ftp_dir)
+            ftp.cwd("..")
+            ftp.delete(marker_name)
+            print("Temporary parent marker removed.")
+        except ftplib.all_errors:
+            print("WARNING: Couldn't remove temporary non-secret parent marker.")
     try:
         ftp.quit()
     except ftplib.all_errors:

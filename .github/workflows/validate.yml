@@ -1,6 +1,8 @@
 name: Validate secure landing change (no deployment)
 
 on:
+  push:
+    branches: [release-preflight]
   pull_request:
     branches: [main]
   workflow_dispatch:

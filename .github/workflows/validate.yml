@@ -45,6 +45,7 @@ jobs:
         run: |
           mkdir -p private/admin-api
           cp -a private-dist/admin-api/. private/admin-api/
+          ln -s dist web # Simulate production sibling web/ for out-of-root PHP handlers
       - name: Verify migration shell syntax
         run: bash -n scripts/timeweb-prepare.sh scripts/timeweb-cutover.sh scripts/timeweb-rollback.sh scripts/timeweb-finish.sh
       - name: Test password rotation through PHP without touching real SMTP

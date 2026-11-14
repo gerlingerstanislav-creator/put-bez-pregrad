@@ -2,6 +2,10 @@ name: Build and deploy to Timeweb
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/production-release-intent-20261114.txt
 
 permissions:
   contents: read
@@ -22,13 +26,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Verify private administration build setting
+      - name: Verify and hide private administration path
         shell: bash
         run: |
           if [[ -z "$PBP_ADMIN_PATH" ]]; then
             echo '::error::PBP_ADMIN_PATH must be configured in GitHub Secrets.'
             exit 1
           fi
+          echo "::add-mask::$PBP_ADMIN_PATH"
+      - name: Validate new admin password hash
+        env:
+          PBP_ADMIN_PASSWORD_HASH: ${{ secrets.PBP_ADMIN_PASSWORD_HASH }}
+        run: node --input-type=module -e 'import {validateBootstrapHash} from "./scripts/apply-admin-bootstrap.mjs"; validateBootstrapHash(process.env.PBP_ADMIN_PASSWORD_HASH);'
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Validate JavaScript
@@ -96,7 +105,12 @@ jobs:
         run: |
           curl --fail --silent --show-error --head --max-time 20 https://bpreg.tw1.ru/ >/dev/null
 
+      - name: Prepare one-time password migration
+        id: bootstrap
+        run: node scripts/create-admin-bootstrap.mjs
+
       - name: Publish over FTP
+        id: publish
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         with:
           server: ${{ secrets.TIMEWEB_FTP_HOST }}
@@ -109,12 +123,51 @@ jobs:
           dangerous-clean-slate: false
           log-level: minimal
 
+      - name: Apply new password hash to protected Timeweb storage
+        id: rotate_password
+        env:
+          PBP_ADMIN_PASSWORD_HASH: ${{ secrets.PBP_ADMIN_PASSWORD_HASH }}
+        run: node scripts/apply-admin-bootstrap.mjs
+
+      - name: Remove temporary bootstrap from local build
+        if: always() && steps.bootstrap.outcome == 'success'
+        shell: bash
+        run: |
+          if [[ -n "${PBP_BOOTSTRAP_FILENAME:-}" ]]; then
+            rm -f "dist/$PBP_ADMIN_PATH/api/$PBP_BOOTSTRAP_FILENAME"
+          fi
+
+      - name: Remove temporary bootstrap from Timeweb
+        if: always() && steps.bootstrap.outcome == 'success' && steps.publish.outcome != 'skipped'
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.TIMEWEB_FTP_HOST }}
+          username: ${{ secrets.TIMEWEB_FTP_USER }}
+          password: ${{ secrets.TIMEWEB_FTP_PASSWORD }}
+          protocol: ftp
+          port: 21
+          local-dir: ./dist/
+          server-dir: ${{ endsWith(secrets.TIMEWEB_FTP_DIR, '/') && secrets.TIMEWEB_FTP_DIR || format('{0}/', secrets.TIMEWEB_FTP_DIR) }}
+          dangerous-clean-slate: false
+          log-level: minimal
+
+      - name: Verify temporary admin migration was deleted
+        if: steps.rotate_password.outcome == 'success'
+        shell: bash
+        run: |
+          status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://bpreg.tw1.ru/$PBP_ADMIN_PATH/api/$PBP_BOOTSTRAP_FILENAME")"
+          if [[ "$status" != "404" ]]; then
+            echo "::error::Temporary migration endpoint was not removed (HTTP $status)"
+            exit 1
+          fi
+
       - name: Check live API
         run: |
           curl --fail --silent --show-error --max-time 15 https://bpreg.tw1.ru/api/public.php | grep -q 'primary_phone'
           test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/api/admin.php?action=session)" = 404
           test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/api/settings.php)" = 404
           test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/admin/)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://bpreg.tw1.ru/login/)" = 404
           curl --fail --silent --show-error --max-time 15 "https://bpreg.tw1.ru/$PBP_ADMIN_PATH/api/admin.php?action=session" | grep -q '"csrf"'
           test "$(curl -s -o /dev/null -w '%{http_code}' http://bpreg.tw1.ru/)" = 308
           echo "HTTPS and retired public administration URLs verified."

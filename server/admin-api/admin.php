@@ -7,7 +7,7 @@ header('Cache-Control: no-store');
 $action = $_GET['action'] ?? 'session';
 if ($action === 'session') {
     only_method('GET');
-    response_json(['authenticated' => ($_SESSION['admin'] ?? false) === true, 'csrf' => $_SESSION['csrf']]);
+    response_json(['authenticated' => admin_session_is_authenticated(), 'csrf' => $_SESSION['csrf']]);
 }
 only_method('POST');
 same_origin();
@@ -16,12 +16,23 @@ validate_csrf($data);
 if ($action === 'login') {
     if (!throttle('admin-login', 8, 900)) response_json(['error' => 'Слишком много попыток. Повторите позднее'], 429);
     $password = $data['password'] ?? null;
+    $state = current_state();
     if (!is_string($password) || strlen($password) > 1024 ||
-        !password_verify($password, (string) (current_state()['password_hash'] ?? ''))) {
+        !password_verify($password, (string) ($state['password_hash'] ?? ''))) {
         response_json(['error' => 'Неверный пароль'], 401);
+    }
+    // One-time migration for installations created before session generations.
+    if (!is_string($state['auth_generation'] ?? null)) {
+        $state = update_state(static function (array $state): array {
+            if (!is_string($state['auth_generation'] ?? null)) {
+                $state['auth_generation'] = bin2hex(random_bytes(16));
+            }
+            return $state;
+        });
     }
     session_regenerate_id(true);
     $_SESSION['admin'] = true;
+    $_SESSION['auth_generation'] = $state['auth_generation'];
     $_SESSION['csrf'] = bin2hex(random_bytes(32));
     response_json(['ok' => true, 'csrf' => $_SESSION['csrf']]);
 }
@@ -115,11 +126,14 @@ if ($action === 'password') {
         response_json(['error' => 'Неверный текущий пароль или новый пароль короче 14 символов'], 422);
     }
     $hash = password_hash($next, PASSWORD_DEFAULT);
-    update_state(static function (array $state) use ($hash): array {
+    $generation = bin2hex(random_bytes(16));
+    update_state(static function (array $state) use ($hash, $generation): array {
         $state['password_hash'] = $hash;
+        $state['auth_generation'] = $generation;
         return $state;
     });
     session_regenerate_id(true);
+    $_SESSION['auth_generation'] = $generation;
     $_SESSION['csrf'] = bin2hex(random_bytes(32));
     response_json(['ok' => true, 'csrf' => $_SESSION['csrf']]);
 }

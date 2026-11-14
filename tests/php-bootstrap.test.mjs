@@ -39,7 +39,7 @@ test('real PHP migration updates admin hash but preserves existing SMTP and cont
   const { filename, token } = prepareAdminBootstrap(site, {
     PBP_ADMIN_PATH: slug, GITHUB_ENV: githubEnv,
   });
-  const passwordHash = execFileSync('php', ['-r', 'echo password_hash("synthetic password for test", PASSWORD_BCRYPT);'], { encoding: 'utf8' }).trim();
+  const passwordHash = execFileSync('php', ['-r', 'echo password_hash("synthetic password for test", PASSWORD_BCRYPT, ["cost" => 12]);'], { encoding: 'utf8' }).trim();
   const port = await availablePort();
   const child = spawn('php', ['-S', '127.0.0.1:' + port, '-t', site], { stdio: 'ignore' });
   const url = 'http://127.0.0.1:' + port + '/' + slug + '/api/' + filename;

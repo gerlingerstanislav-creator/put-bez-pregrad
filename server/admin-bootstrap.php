@@ -23,10 +23,13 @@ if (!is_string($token) || !hash_equals($tokenDigest, hash('sha256', $token))) {
     response_json(['error' => 'Forbidden'], 403);
 }
 if (!is_string($hash) ||
-    !preg_match('/^\$2[aby]\$[0-9]{2}\$[\.\/A-Za-z0-9]{53}$/D', $hash) ||
+    !preg_match('/^\$2[aby]\$(?:1[2-9]|2[0-9]|3[01])\$[\.\/A-Za-z0-9]{53}$/D', $hash) ||
     password_get_info($hash)['algoName'] !== 'bcrypt') {
     response_json(['error' => 'Invalid password hash'], 422);
 }
+
+// Never erase the live SMTP configuration if the hosting storage is missing.
+if (!is_file(state_file())) response_json(['error' => 'Server state missing'], 503);
 
 // Preserves SMTP credentials, contacts and any unrelated server-side state.
 update_state(static function (array $state) use ($hash): array {

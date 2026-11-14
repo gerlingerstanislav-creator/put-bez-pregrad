@@ -3,7 +3,7 @@ import path from 'node:path';
 import { resolveAdminPath } from './finalize-build.mjs';
 
 export function validateBootstrapHash(hash) {
-  if (typeof hash !== 'string' || !/^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$/.test(hash)) {
+  if (typeof hash !== 'string' || !/^\$2[aby]\$(?:1[2-9]|2[0-9]|3[01])\$[./A-Za-z0-9]{53}$/.test(hash)) {
     throw new Error('PBP_ADMIN_PASSWORD_HASH must be a valid bcrypt hash');
   }
   return hash;

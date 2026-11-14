@@ -1,0 +1,24 @@
+name: Probe Timeweb filesystem permissions (no deployment)
+
+on:
+  push:
+    branches: [release-preflight]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test private storage candidates without reading secrets
+        env:
+          PBP_ADMIN_PATH: ${{ secrets.PBP_ADMIN_PATH }}
+          TIMEWEB_FTP_HOST: ${{ secrets.TIMEWEB_FTP_HOST }}
+          TIMEWEB_FTP_USER: ${{ secrets.TIMEWEB_FTP_USER }}
+          TIMEWEB_FTP_PASSWORD: ${{ secrets.TIMEWEB_FTP_PASSWORD }}
+          TIMEWEB_FTP_DIR: ${{ secrets.TIMEWEB_FTP_DIR }}
+        run: python3 scripts/probe-timeweb-storage.py

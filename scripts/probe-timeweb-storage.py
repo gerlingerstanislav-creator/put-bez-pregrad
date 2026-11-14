@@ -115,15 +115,57 @@ try:
         raise RuntimeError("Filesystem probe returned unexpected response")
     print("Timeweb filesystem capability report:")
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
-    if outside_ftp_dir and report.get("ftp_parent_marker_matches") and not report["current"]["storage_is_dir"]:
+    # PHP cannot mkdir in the parent of public_html on this Timeweb account.
+    # Attempt the equivalent operation through FTP, but never overwrite existing data.
+    # Verify via the live PHP probe before treating the storage as available.
+    if outside_ftp_dir and not report["current"]["storage_is_dir"]:
+        created = False
         ftp.cwd("..")
-        ftp.mkd(".pbp-private")
         try:
-            ftp.sendcmd("SITE CHMOD 700 .pbp-private")
-        except ftplib.all_errors:
-            pass
-        ftp.cwd(original_ftp_dir)
-        print("Created dedicated private storage directory via FTP outside webroot.")
+            try:
+                ftp.mkd(".pbp-private")
+                created = True
+            except ftplib.error_perm:
+                # May be a pre-existing directory; never delete or modify its contents.
+                try:
+                    ftp.cwd(".pbp-private")
+                    ftp.cwd("..")
+                except ftplib.all_errors:
+                    print("FTP could not create the protected directory.")
+            if created:
+                try:
+                    ftp.sendcmd("SITE CHMOD 700 .pbp-private")
+                except ftplib.all_errors:
+                    pass
+        finally:
+            ftp.cwd(original_ftp_dir)
+        if created:
+            print("FTP created a private directory outside its published site directory.")
+            follow_up = subprocess.run([
+                "curl", "--silent", "--show-error", "--fail", "--max-time", "20",
+                "-H", "Content-Type: application/json", "--data-binary", "@-",
+                url,
+            ], input=json.dumps({"token": token}), text=True, capture_output=True, timeout=25)
+            if follow_up.returncode:
+                raise RuntimeError("Could not verify private directory from PHP")
+            after = json.loads(follow_up.stdout)
+            visible = bool(after.get("current", {}).get("storage_is_dir"))
+            writable = bool(after.get("current", {}).get("storage_writable"))
+            print("FTP private directory visible to PHP:", visible)
+            print("FTP private directory writable by PHP:", writable)
+            if not visible:
+                # This FTP parent does not map to PHP's parent; remove only our empty probe dir.
+                try:
+                    ftp.cwd("..")
+                    ftp.rmd(".pbp-private")
+                    ftp.cwd(original_ftp_dir)
+                    print("Removed unrelated empty test directory.")
+                except ftplib.all_errors:
+                    print("WARNING: Could not remove the newly created empty test directory.")
+            elif not writable:
+                print("Storage exists but PHP lacks permission; no broad chmod was applied.")
+            else:
+                print("Protected storage directory is ready for PHP.")
 finally:
     if original_ftp_dir is not None:
         try:

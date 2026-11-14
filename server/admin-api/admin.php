@@ -1,6 +1,6 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/../api/common.php';
+require_once __DIR__ . '/../../api/common.php';
 require_https();
 start_admin_session();
 header('Cache-Control: no-store');
@@ -96,7 +96,7 @@ if ($action === 'test-email') {
     if (!smtp_public_status($state)['configured']) response_json(['error' => 'Сначала сохраните настройки SMTP'], 422);
     $recipient = normalized_email($state['settings']['request_email'] ?? null);
     if (!$recipient) response_json(['error' => 'Укажите корректную почту получения заявок'], 422);
-    require_once __DIR__ . '/../api/mailer.php';
+    require_once __DIR__ . '/../../api/mailer.php';
     try {
         send_site_message($state['smtp'], $recipient,
             'Тест почты — Путь без преград',

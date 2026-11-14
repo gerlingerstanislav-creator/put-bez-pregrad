@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { resolveAdminPath } from './finalize-build.mjs';
 
 /** Create a short-lived authenticated migration file, never committed to git. */
-export function prepareAdminBootstrap(dist = 'site-dist/public', env = process.env, now = Date.now()) {
+export function prepareAdminBootstrap(dist = 'dist', env = process.env, now = Date.now()) {
   const slug = resolveAdminPath(env);
   if (!env.PBP_ADMIN_PATH || !env.GITHUB_ENV) {
     throw new Error('Admin bootstrap is allowed only in a production GitHub Actions job');

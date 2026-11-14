@@ -6,7 +6,7 @@ declare(strict_types=1);
  * Both placeholders are replaced by the runner before FTP upload.
  * No password hash, SMTP credential, or bearer token is stored in this file.
  */
-require_once dirname(__DIR__, 3) . '/app/api/common.php';
+require_once __DIR__ . '/../../api/common.php';
 require_https();
 only_method('POST');
 header('Cache-Control: no-store');
@@ -28,9 +28,8 @@ if (!is_string($hash) ||
     response_json(['error' => 'Invalid password hash'], 422);
 }
 
-// After the operator's one-time cutover, initialize an empty installation.
-// On later deployments preserve existing SMTP credentials and contacts.
-// Old private state must be copied into storage/ BEFORE the first cutover.
+// Fresh site: create protected state.php with defaults. Existing contacts and SMTP
+// credentials are preserved; this handler never writes secrets into the build.
 
 // Preserves SMTP credentials, contacts and any unrelated server-side state.
 update_state(static function (array $state) use ($hash): array {

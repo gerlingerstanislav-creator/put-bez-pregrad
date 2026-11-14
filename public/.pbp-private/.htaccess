@@ -1,0 +1,9 @@
+# Deny every direct HTTP request on Apache; Timeweb Nginx may bypass this,
+# so all sensitive runtime data also lives in non-outputting PHP files.
+Options -Indexes
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Deny from all
+</IfModule>

@@ -70,3 +70,44 @@ test('real PHP migration updates admin hash but preserves existing SMTP and cont
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('one-time bootstrap initializes a fresh private state without SMTP secret', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pbp-fresh-install-'));
+  const site = path.join(dir, 'web');
+  const slug = 'integration-fresh-admin-123456789';
+  fs.mkdirSync(path.join(site, 'api'), { recursive: true });
+  fs.mkdirSync(path.join(site, slug, 'api'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'private'), { recursive: true });
+  fs.copyFileSync('public/api/common.php', path.join(site, 'api', 'common.php'));
+  const { filename, token } = prepareAdminBootstrap(site, {
+    PBP_ADMIN_PATH: slug, GITHUB_ENV: path.join(dir, 'github-env'),
+  });
+  const hash = execFileSync('php', ['-r',
+    'echo password_hash("synthetic fresh-install password", PASSWORD_BCRYPT, ["cost" => 12]);',
+  ], { encoding: 'utf8' }).trim();
+  const port = await availablePort();
+  const child = spawn('php', ['-S', '127.0.0.1:' + port, '-t', site], { stdio: 'ignore' });
+  const url = 'http://127.0.0.1:' + port + '/' + slug + '/api/' + filename;
+  try {
+    let ready = false;
+    for (let i = 0; i < 35; i += 1) {
+      try { await fetch(url); ready = true; break; } catch { await delay(100); }
+    }
+    assert.ok(ready);
+    const response = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password_hash: hash }),
+    });
+    assert.equal(response.status, 200);
+    const raw = fs.readFileSync(path.join(dir, 'private', 'state.php'), 'utf8');
+    const prefix = '<?php http_response_code(404); exit; ?>\n';
+    const state = JSON.parse(raw.slice(prefix.length));
+    assert.equal(state.password_hash, hash);
+    assert.equal(state.settings.primary_phone, '+7 (8422) 71-73-03');
+    assert.equal(state.smtp, undefined);
+    assert.match(state.auth_generation, /^[0-9a-f]{32}$/);
+  } finally {
+    child.kill();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

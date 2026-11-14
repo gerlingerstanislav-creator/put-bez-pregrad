@@ -7,3 +7,6 @@ dist/
 
 # Runtime configuration stays outside document root
 .pbp-private/
+
+private/
+private-dist/
